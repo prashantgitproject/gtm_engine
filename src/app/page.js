@@ -257,7 +257,7 @@ export default function Page() {
                           {account.industry || 'General'}
                         </td>
                         <td className="border border-slate-200 p-3 text-sm leading-6 text-slate-700">
-                          <p className="max-w-md overflow-hidden text-ellipsis whitespace-nowrap">
+                          <p className="whitespace-nowrap">
                             {account.reason}
                           </p>
                         </td>
