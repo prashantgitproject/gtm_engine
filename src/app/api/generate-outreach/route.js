@@ -30,17 +30,17 @@ function parseOutreach(content) {
 
     try {
       const linkedinMatch = content.match(
-        /(?:^|\n)\s*(?:\d+[\).\s-]*)?(?:linkedin(?:\s*dm|\s*message)?)\s*:\s*([\s\S]*?)(?=\n\s*(?:\d+[\).\s-]*)?(?:cold\s*email|email)\s*:|$)/i
+        /(?:^|\n)\s*(?:\d+[\).\s-]*)?(?:linkedin(?:\s*dm|\s*message)?(?:\s*1)?)\s*:\s*([\s\S]*?)(?=\n\s*(?:\d+[\).\s-]*)?(?:email(?:\s*1)?|cold\s*email)\s*:|$)/i
       )
       const emailMatch = content.match(
-        /(?:^|\n)\s*(?:\d+[\).\s-]*)?(?:cold\s*email|email)\s*:\s*([\s\S]*)$/i
+        /(?:^|\n)\s*(?:\d+[\).\s-]*)?(?:email(?:\s*1)?|cold\s*email)\s*:\s*([\s\S]*)$/i
       )
 
-      const linkedin = linkedinMatch?.[1]?.trim() || ''
-      const email = emailMatch?.[1]?.trim() || ''
+      const linkedin1 = linkedinMatch?.[1]?.trim() || ''
+      const email1 = emailMatch?.[1]?.trim() || ''
 
-      if (linkedin || email) {
-        return { linkedin, email }
+      if (linkedin1 || email1) {
+        return { linkedin1, email1 }
       }
 
       const lines = content
@@ -50,8 +50,8 @@ function parseOutreach(content) {
 
       const splitIndex = Math.ceil(lines.length / 2)
       return {
-        linkedin: lines.slice(0, splitIndex).join('\n').trim(),
-        email: lines.slice(splitIndex).join('\n').trim(),
+        linkedin1: lines.slice(0, splitIndex).join('\n').trim(),
+        email1: lines.slice(splitIndex).join('\n').trim(),
       }
     } catch {
       return null
@@ -116,11 +116,13 @@ export async function POST(request) {
 Instructions:
 Write output in strict JSON:
 {
-  "linkedin": "",
-  "email": ""
+  "linkedin1": "",
+  "email1": "",
+  "linkedin2": "",
+  "email2": ""
 }
 
-Rules for email:
+Rules for each email:
 - First line MUST be: Subject: ...
 - Then a blank line
 - Then the email body
@@ -131,10 +133,16 @@ Best,
 Wardell  
 +91-XXXXXXXXXX
 
-Rules for LinkedIn:
+Rules for each LinkedIn touch:
 - No subject
 - No signature
 - Short and conversational
+
+Campaign sequencing:
+- linkedin1: initial light opener
+- email1: primary problem-led email
+- linkedin2: follow-up after no reply
+- email2: short bump with a fresh angle
 
 Ensure formatting is clean and consistent.`
 
@@ -172,12 +180,12 @@ Ensure formatting is clean and consistent.`
 
     if (
       !outreach ||
-      typeof outreach.linkedin !== 'string' ||
-      typeof outreach.email !== 'string'
+      typeof (outreach.linkedin1 || outreach.linkedin) !== 'string' ||
+      typeof (outreach.email1 || outreach.email) !== 'string'
     ) {
       outreach = {
-        linkedin: `Hi ${company} team - noticed ${reason}. Open to a quick chat this week to compare options?`,
-        email: `Subject: Quick idea for ${company}
+        linkedin1: `Hi ${company} team - noticed ${reason}. Open to a quick chat this week to compare options?`,
+        email1: `Subject: Quick idea for ${company}
 
 Hi team,
 
@@ -188,12 +196,25 @@ Would you be open to a short 15-minute intro this week?
 
 Best,
 [Your Name]`,
+        linkedin2: `Circling back in case this is timely for ${company}. Happy to share a quick point of view if helpful.`,
+        email2: `Subject: Re: Quick idea for ${company}
+
+Hi team,
+
+Following up in case this slipped through. We often see teams dealing with ${reason.toLowerCase()} wait too long before pressure builds.
+
+Worth sending over a few ideas?
+
+Best,
+[Your Name]`,
       }
     }
 
     return NextResponse.json({
-      linkedin: outreach.linkedin,
-      email: outreach.email,
+      linkedin1: outreach.linkedin1 || outreach.linkedin || '',
+      email1: outreach.email1 || outreach.email || '',
+      linkedin2: outreach.linkedin2 || outreach.followupLinkedin || '',
+      email2: outreach.email2 || outreach.followup || outreach.email || '',
     })
   } catch (error) {
     return NextResponse.json(
