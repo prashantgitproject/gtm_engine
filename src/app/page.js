@@ -256,7 +256,7 @@ export default function Page() {
 
             {loading || accounts.length > 0 ? (
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-                <p className="font-medium text-slate-800">What happens next</p>
+                <p className="font-medium text-slate-800">process:</p>
                 <div className="mt-2 space-y-1.5">
                   {ACCOUNT_LOADING_STEPS.map((step, index) => {
                     const activeIndex = ACCOUNT_LOADING_STEPS.indexOf(loadingMessage)
