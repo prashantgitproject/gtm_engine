@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { scrapeCompanies } from '../../../utils/apify'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
@@ -22,16 +23,20 @@ function parseAccounts(content) {
   }
 }
 
-export async function POST(request) {
+export async function POST(req) {
   try {
-    const { icp, signal } = await request.json()
+    const { keyword, location, signal } = await req.json()
 
-    if (!icp || !signal) {
+    if (!keyword || !location || !signal) {
       return NextResponse.json(
-        { error: 'Both icp and signal are required.' },
+        { error: 'Keyword, location, and signal are required.' },
         { status: 400 }
       )
     }
+
+    const companies = await scrapeCompanies(keyword, location)
+
+    console.log('Scraped companies:', companies)
 
     if (!process.env.OPENROUTER_API_KEY) {
       return NextResponse.json(
@@ -40,25 +45,50 @@ export async function POST(request) {
       )
     }
 
-    const prompt = `Find 20 companies matching ICP and signal.
-Return valid JSON only (no markdown, no extra text).
+  const prompt = `
+  You are enriching real company data for outbound targeting.
 
-ICP: ${icp}
-Signal: ${signal}
+  Search keyword:
+  ${keyword}
 
-For each company include:
-- name
-- reason (pain hypothesis)
-- industry
+  Search location:
+  ${location}
 
-Include industry explicitly.
+  Signal:
+  ${signal}
 
-Return format:
-[
-  { "name": "", "reason": "", "industry": "" }
-]`
+  For each company:
+  - DO NOT change or remove existing fields
+  - Add:
+    - industry
+    - reason (why they are a good target)
+    - score (1–10 based on targeting strength)
 
-    const response = await fetch(OPENROUTER_URL, {
+  Use available signals like rating, reviews, keyword relevance, and location.
+
+  Companies:
+  ${JSON.stringify(companies, null, 2)}
+
+  Return STRICT JSON array with SAME structure + added fields:
+
+  [
+    {
+      "name": "",
+      "address": "",
+      "city": "",
+      "rating": "",
+      "reviews": "",
+      "website": "",
+      "phone": "",
+      "postalCode": "",
+      "industry": "",
+      "reason": "",
+      "score": ""
+    }
+  ]
+  `
+
+    const res = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
@@ -70,48 +100,29 @@ Return format:
       }),
     })
 
-    if (!response.ok) {
-      const errorBody = await response.text()
+    if (!res.ok) {
+      const errorBody = await res.text()
       return NextResponse.json(
         { error: 'OpenRouter request failed.', details: errorBody },
         { status: 502 }
       )
     }
 
-    const data = await response.json()
+    const data = await res.json()
     const content = extractMessageContent(data?.choices?.[0]?.message?.content) || '[]'
-    let accounts = []
 
-    try {
-      accounts = parseAccounts(content)
-    } catch {
-      accounts = null
-    }
+    let parsed = parseAccounts(content)
 
-    if (!Array.isArray(accounts)) {
-      accounts = [
-        {
-          name: 'Mock Payroll Co',
-          reason: `Potential fit for ICP "${icp}" and signal "${signal}".`,
-          industry: 'General',
-        },
-        {
-          name: 'Mock People Ops Inc',
-          reason: `Likely evaluating alternatives related to "${signal}".`,
-          industry: 'General',
-        },
-      ]
-    }
-
-    const normalizedAccounts = accounts
-      .map((account) => ({
-        name: account?.name || '',
-        reason: account?.reason || '',
-        industry: account?.industry || 'General',
+    if (!Array.isArray(parsed)) {
+      parsed = companies.map((company) => ({
+        ...company,
+        industry: 'Unknown',
+        reason: `Potential fit for "${keyword}" in ${location}.`,
+        score: '',
       }))
-      .filter((account) => account.name && account.reason)
+    }
 
-    return NextResponse.json(normalizedAccounts)
+    return NextResponse.json(parsed)
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to generate accounts.', details: error.message },

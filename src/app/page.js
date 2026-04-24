@@ -1,7 +1,6 @@
 'use client'
 
 import { Fragment, useState } from 'react'
-import { FaLinkedin } from 'react-icons/fa'
 import { IoMdMail } from 'react-icons/io'
 
 const SIGNAL_OPTIONS = [
@@ -11,8 +10,21 @@ const SIGNAL_OPTIONS = [
   'New leadership hire',
 ]
 
+function formatPhoneNumber(phone) {
+  if (!phone) return ''
+
+  const value = String(phone).trim()
+
+  if (!value.startsWith('+')) {
+    return value
+  }
+
+  return value.replace(/[^\d+]/g, '')
+}
+
 export default function Page() {
-  const [icp, setIcp] = useState('')
+  const [keyword, setKeyword] = useState('')
+  const [location, setLocation] = useState('')
   const [signal, setSignal] = useState('Unhappy with ADP/Paychex')
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(false)
@@ -34,7 +46,7 @@ export default function Page() {
     setCopiedState({})
     setActionStatus('')
     setExpandedRow(null)
-    console.log(icp, signal)
+    console.log(keyword, location, signal)
 
     try {
       const response = await fetch('/api/generate-accounts', {
@@ -42,7 +54,7 @@ export default function Page() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ icp, signal }),
+        body: JSON.stringify({ keyword, location, signal }),
       })
 
       if (!response.ok) {
@@ -144,23 +156,40 @@ export default function Page() {
         <div className="space-y-2 text-center">
           <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">GTM Account Generator</h1>
           <p className="mx-auto max-w-xl text-sm leading-6 text-slate-600">
-            Add your ICP and signal to generate target accounts.
+            Add a keyword, location, and signal to generate target accounts.
           </p>
         </div>
 
         <section className="max-w-3xl mx-auto rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
           <div className="space-y-5">
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-slate-800" htmlFor="icp">
-                ICP Input
-              </label>
-              <textarea
-                id="icp"
-                value={icp}
-                onChange={(event) => setIcp(event.target.value)}
-                placeholder="Example: 100-500 employee US-based fintech companies with distributed teams..."
-                className="h-32 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none ring-blue-500 placeholder:text-slate-400 focus:ring-2"
-              />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-slate-800" htmlFor="keyword">
+                  Keyword
+                </label>
+                <input
+                  id="keyword"
+                  type="text"
+                  value={keyword}
+                  onChange={(event) => setKeyword(event.target.value)}
+                  placeholder="Example: construction companies"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none ring-blue-500 placeholder:text-slate-400 focus:ring-2"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-slate-800" htmlFor="location">
+                  Location
+                </label>
+                <input
+                  id="location"
+                  type="text"
+                  value={location}
+                  onChange={(event) => setLocation(event.target.value)}
+                  placeholder="Example: Mumbai, India"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none ring-blue-500 placeholder:text-slate-400 focus:ring-2"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -185,7 +214,7 @@ export default function Page() {
               type="button"
               onClick={handleGenerateAccounts}
               className="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-              disabled={loading}
+              disabled={loading || !keyword.trim() || !location.trim()}
             >
               Generate Accounts
             </button>
@@ -225,65 +254,76 @@ export default function Page() {
             <p className="mt-2 text-sm text-slate-600">{loadingMessage}</p>
           ) : accounts.length === 0 ? (
             <p className="mt-2 text-sm text-slate-600">
-              No accounts generated yet. Add ICP details, choose a signal, and click Generate Accounts.
+              No accounts generated yet. Add a keyword, location, choose a signal, and click Generate Accounts.
             </p>
           ) : (
             <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
               <table className="table-auto w-full border-collapse text-left">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="border border-slate-200 px-3 py-2 text-xs font-semibold uppercase text-slate-600">
-                      Company
-                    </th>
-                    <th className="border border-slate-200 px-3 py-2 text-xs font-semibold uppercase text-slate-600">
-                      Industry
-                    </th>
-                    <th className="border border-slate-200 px-3 py-2 text-xs font-semibold uppercase text-slate-600">
-                      Reason
-                    </th>
-                    <th className="border border-slate-200 px-3 py-2 text-xs font-semibold uppercase text-slate-600">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="border px-3 py-2 text-xs font-semibold uppercase text-slate-600">Company</th>
+                  <th className="border px-3 py-2 text-xs font-semibold uppercase text-slate-600">City</th>
+                  <th className="border px-3 py-2 text-xs font-semibold uppercase text-slate-600">Reviews</th>
+                  <th className="border px-3 py-2 text-xs font-semibold uppercase text-slate-600">Website</th>
+                  <th className="border px-3 py-2 text-xs font-semibold uppercase text-slate-600">Phone</th>
+                  <th className="border px-3 py-2 text-xs font-semibold uppercase text-slate-600">Postal Code</th>
+                  <th className="border px-3 py-2 text-xs font-semibold uppercase text-slate-600">Actions</th>
+                </tr>
+              </thead>
                 <tbody>
                   {accounts.map((account, index) => (
                     <Fragment key={`${account.name}-${index}`}>
                       <tr className="align-top even:bg-gray-50 hover:bg-gray-100">
-                        <td className="border border-slate-200 p-3 text-sm font-medium text-slate-900">
+                        <td className="border p-3 text-sm font-medium text-slate-900">
                           {account.name}
                         </td>
-                        <td className="border border-slate-200 p-3 text-sm text-slate-700">
-                          {account.industry || 'General'}
+
+                        <td className="border p-3 text-sm text-slate-700">
+                          {account.city || '—'}
                         </td>
-                        <td className="border border-slate-200 p-3 text-sm leading-6 text-slate-700">
-                          <p className="whitespace-nowrap">
-                            {account.reason}
-                          </p>
+
+                        <td className="border p-3 text-sm text-slate-700">
+                          {account.reviews || '—'}
                         </td>
-                        <td className="border border-slate-200 p-3">
+
+                        <td className="border p-3 text-sm text-slate-700">
+                          {account.website ? (
+                            <a
+                              href={account.website}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-blue-600 underline"
+                            >
+                              Visit_site
+                            </a>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+
+                        <td className="border p-3 text-sm text-slate-700">
+                          {formatPhoneNumber(account.phone) || '—'}
+                        </td>
+
+                        <td className="border p-3 text-sm text-slate-700">
+                          {account.postalCode || '—'}
+                        </td>
+
+                        <td className="border p-3">
                           <div className="flex flex-wrap items-center gap-2">
-                          {/* <button
-                            type="button"
-                            onClick={() => handleGenerateOutreach(account.name, account.reason)}
-                            disabled={Boolean(outreachLoading[account.name])}
-                            className="inline-flex items-center justify-center rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-                          >
-                            {outreachLoading[account.name] ? 'Generating...' : 'Generate Outreach'}
-                          </button> */}
-                          <button
-                            type="button"
-                            onClick={() => toggleExpandedRow(account.name)}
-                            className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
-                          >
-                            {expandedRow === account.name ? 'Collapse' : 'Expand'}
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandedRow(account.name)}
+                              className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                            >
+                              {expandedRow === account.name ? 'Collapse' : 'Expand'}
+                            </button>
                           </div>
                         </td>
                       </tr>
                       {expandedRow === account.name ? (
                         <tr>
-                          <td colSpan={4} className="border border-slate-200 bg-slate-50 p-4">
+                          <td colSpan={7} className="border border-slate-200 bg-slate-50 p-4">
                             {outreachLoading[account.name] ? (
                               <p className="text-xs text-slate-500">Writing outreach...</p>
                             ) : messages[account.name] ? (
