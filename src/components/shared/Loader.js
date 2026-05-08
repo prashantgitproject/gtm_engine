@@ -28,7 +28,7 @@ const Loader = ({
         {/* Rotating cyan ring */}
         <div
           style={ringStyle}
-          className="absolute rounded-full border-4 border-cyan-600 border-t-transparent animate-spin"
+          className="absolute rounded-full border-4 border-sky-600 border-t-transparent animate-spin"
         />
 
         {/* Logo sits centered above the ring */}

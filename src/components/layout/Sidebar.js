@@ -1,13 +1,8 @@
 "use client";
 import React, { useEffect, useState } from 'react'
-import { FaLinkedin, FaRobot, FaStackOverflow, FaUserCircle } from 'react-icons/fa';
-import { IoFolderOpenOutline, IoPricetagOutline, IoSearchSharp, IoFolderOutline, IoChevronDownSharp, IoImage, IoCalendarOutline } from "react-icons/io5";
-import { GrSend } from "react-icons/gr"; //
-import { ImProfile } from "react-icons/im";
-import { LuFolderClosed, LuFolderMinus, LuFolderOpen, LuWorkflow } from "react-icons/lu";
-import { VscGitPullRequest, VscSaveAll } from "react-icons/vsc";
-import { MdDashboard, MdManageHistory, MdOutlineCampaign, MdOutlineRateReview } from 'react-icons/md';
-import { RiAlignItemBottomFill } from "react-icons/ri";
+import { FaUserCircle } from 'react-icons/fa';
+import { IoPricetagOutline, IoSettingsOutline } from "react-icons/io5";
+import { MdDashboard, MdOutlineCampaign } from 'react-icons/md';
 import { IoIosLogOut } from "react-icons/io";
 import { useDisclosure } from '@chakra-ui/react';
 import { useUser } from '@/context/UserContext';
@@ -24,7 +19,6 @@ const Sidebar = () => {
     const pathname = usePathname();
     const profile = useDisclosure();
     const logout = useDisclosure();
-    const contact = useDisclosure();
 
     const logoutHandler = () => {
         logout.onClose();
@@ -36,20 +30,15 @@ const Sidebar = () => {
   return (
     <div className='h-[100vh] flex flex-col items-start justify-between p-3'>
         <Link href={'/'} className='flex items-center justify-start gap-2 h-[5vh] w-full p-2 pb-4'>
-            <img className='h-8' src="/logo_white.svg" alt="" />
-            <h1 className='font-semibold text-lg text-gray-200'>Services</h1>
+            <img className='h-8 ' src="/logo.svg " alt="" />
+            <h1 className='font-semibold text-lg text-gray-200'>GTM Engine</h1>
         </Link>
         <div className='h-[90vh] flex flex-col items-start justify-between w-full text-white'>
             <div className='flex flex-col gap-4 w-full'>
                 <LinkButton url='/dashboard' title='Dashboard' icon={<MdDashboard size={20}/>} active={params === 'dashboard'} />
-                <LinkButton url='/review' title='Review & Approve' icon={<MdOutlineRateReview size={20}/>} active={params === 'review'} />
-                <LinkButton url='/calendar' title='Content Calender' icon={<IoCalendarOutline size={20}/>} active={params === 'calendar'} />
-                <LinkButton url='/image' title='Images' icon={<IoImage size={20}/>} active={params === 'image'} />
-                <LinkButton url='/context' title='Context' icon={<FaStackOverflow size={20}/>} active={params === 'context'} />
-                <button onClick={contact.onOpen} className={`flex items-center gap-4 p-2 ${params === 'contact' ? 'bg-gradient-to-tr from-cyan-500/90 to-cyan-100/30 rounded-lg' : ''}`}>
-                    <IoPricetagOutline size={20} />
-                    Pricing
-                </button>
+                <LinkButton url='/campaigns' title='Campaigns' icon={<MdOutlineCampaign size={25}/>} active={params === 'campaigns'} />
+                <LinkButton url='/settings' title='Settings' icon={<IoSettingsOutline size={20}/>} active={params === 'settings'} />
+                <LinkButton url='/pricing' title='Pricing' icon={<IoPricetagOutline size={20}/>} active={params === 'pricing'} />
             </div>
 
             <div>
@@ -67,14 +56,13 @@ const Sidebar = () => {
 
         <Profile isOpen={profile.isOpen} onClose={profile.onClose} user={user}/>
         <ConfirmBox isOpen={logout.isOpen} onClose={logout.onClose} action="Logout" handler={logoutHandler}/>
-        {/* <ContactUs isOpen={contact.isOpen} onClose={contact.onClose} /> */}
 
     </div>
   )
 }
 
 const LinkButton = ({ url = '/', title = 'Home', icon, active }) => (
-    <Link href={url} className={`relative flex items-center gap-4 ${active ? 'p-2 bg-gradient-to-tr from-cyan-500/90 to-cyan-100/30 rounded-lg' : 'p-2'}`}>
+    <Link href={url} className={`relative flex items-center gap-4 ${active ? 'p-2 bg-white text-sky-800 rounded-lg' : 'p-2'}`}>
       {icon}
       {title}
     </Link>

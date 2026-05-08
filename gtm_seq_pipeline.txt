@@ -1,0 +1,303 @@
+# GTM / Top of Funnel — Sequential Pipeline
+**Client:** Wardell · AT Enterprises
+**Version:** v0.2 · Prashant handoff · Apr 2026
+**Playbook:** ADP / Paychex Displacement
+
+---
+
+## Overview
+
+A five-stage sequential pipeline that takes a sales playbook and CRM as inputs, defines ICP and signal rules, enriches matched accounts via Bitscale and Clay, and produces hyperpersonalized multi-channel outreach sequences routed through BCP (brand/voice layer).
+
+---
+
+## Stage 01 — Sources
+
+**Purpose:** Connect the two required inputs — a playbook (what signal pattern are we hunting?) and a CRM (where does qualified output land?). Everything downstream is derived from these two.
+
+### Input 1 · Playbook — ADP / Paychex Displacement
+
+| Field | Value |
+|---|---|
+| Target archetype | US mid-market companies unhappy with ADP or Paychex |
+| Signal sources | G2 · Trustpilot · Reddit · LinkedIn · DOL filings · BuiltWith |
+| Trigger pattern | Negative sentiment + ICP match + decision-maker reachable |
+| Volume target | 80–120 qualified prospects / month |
+
+### Input 2 · CRM — HubSpot · Wardell Workspace
+
+| Field | Value |
+|---|---|
+| Existing contacts | 1,247 |
+| Open deals | 38 · $2.4M pipeline |
+| Dedup rule | Don't outbound to accounts already in pipeline |
+| Write-back | Qualified prospects → HubSpot contacts + deal |
+
+---
+
+## Stage 02 — ICP (from GTM Core)
+
+**Purpose:** Pull the validated Ideal Customer Profile from GTM Core. Any update to GTM Core propagates here automatically.
+
+**Source:** GTM Core · Wardell v2.3 (synced 2h ago)
+**ICP Name:** Wardell — US Construction & Hospitality, 50–500 FTE
+
+### Industry Verticals
+- Commercial Construction
+- Residential Construction
+- Hospitality — Hotels
+- Hospitality — F&B
+
+### Company Size
+- 50–150 FTE (core)
+- 150–500 FTE (expansion)
+- Revenue $10M–$100M
+
+### Geography
+- US Sunbelt (TX, FL, AZ, NV)
+- US Mountain West (CO, UT)
+- US Southeast (GA, SC, NC)
+
+### Tech Stack — Target Displacement
+- ADP Workforce / Run
+- Paychex Flex
+- Gusto (unstable switchers)
+- QuickBooks Payroll
+
+### Pain Archetypes
+- Multi-state 1099 compliance
+- Certified payroll / prevailing wage
+- Seasonal hiring surges
+- Tipped employee reporting
+
+### Decision Makers
+- CFO / Controller
+- HR Director / VP People
+- Ops Director
+- Owner (< 150 FTE)
+
+---
+
+## Stage 03 — Signals
+
+**Purpose:** Define rules that flag an ICP-match company as actively ready to switch. Each signal specifies where to watch, what to look for, and how much it weighs.
+
+| # | Signal | Sources | Trigger | Weight | Matches (30d) | Active |
+|---|---|---|---|---|---|---|
+| 1 | ADP / Paychex Dissatisfaction | G2, Trustpilot, Reddit | Negative review mentioning competitor + payroll pain in last 90d | 95 | 142 | ✅ |
+| 2 | Hiring Surge — Field Roles | LinkedIn Jobs, Indeed, Career pages | 30%+ field headcount increase in 60 days within ICP geos | 82 | 89 | ✅ |
+| 3 | Compliance Flag | DOL filings, State labor boards | Audit, citation, or settlement within 12 months | 78 | 34 | ✅ |
+| 4 | Funding / M&A Event | Crunchbase, PitchBook, Press | Series A+ raise or acquisition in last 6 months | 71 | 56 | ✅ |
+| 5 | 1099 Volume Spike | Public filings, Job postings | Sudden increase in 1099 engagement — construction-heavy | 65 | 41 | ✅ |
+| 6 | HRIS Tech Stack Change | BuiltWith, Job postings, LinkedIn | Active evaluation or recent switch — conversion 2.3× higher | 68 | 27 | ⏸ |
+
+---
+
+## Stage 04 — Account Book
+
+**Purpose:** Signals matched. Bitscale and Clay enrich contacts, pull context, and verify emails. Everything needed to approach each prospect in one table.
+
+### Enrichment Pipeline
+
+```
+Signal-matched companies:   362
+       ↓ Bitscale (firmographics, HRIS, revenue)
+       ↓ Clay (contacts, emails, LinkedIn, context)
+Qualified prospects:         87
+```
+
+---
+
+### Prospect 1 — Meridian Construction Group
+
+**Contact:** Danielle Okafor · CFO
+**Email:** d.okafor@meridiancg.com
+**LinkedIn:** linkedin.com/in/danielleokafor
+**Company:** Meridian Construction Group · Commercial Construction · 340 FTE · $48M revenue · Austin, TX
+**HRIS today:** ADP Workforce
+**Fit Score:** 94
+
+**Why this person:**
+CFO publicly complained on LinkedIn about ADP rate hike in Feb. Firm crossed 300 FTE last quarter — classic ADP Workforce pain band.
+
+**Signals triggered:** ADP churn risk · Hiring surge · Compliance flag
+
+**Evidence:**
+- LinkedIn post (Feb 12): "40% mid-contract rate hike from our HRIS provider. Unreal."
+- Added 74 field roles in Q1 — 28% headcount jump
+- OSHA citation filed Mar 2026 — multi-state payroll complexity cited
+
+---
+
+### Prospect 2 — Coastline Hospitality Partners
+
+**Contact:** Marcus Trieu · Director of Operations
+**Email:** marcus.t@coastlinehp.com
+**LinkedIn:** linkedin.com/in/marcustrieu
+**Company:** Coastline Hospitality Partners · Hospitality · 180 FTE · $22M revenue · Miami, FL
+**HRIS today:** Paychex Flex
+**Fit Score:** 91
+
+**Why this person:**
+Operations Director posted on r/smallbusiness about Paychex tipped-wage reporting nightmare. Firm just closed Series A.
+
+**Signals triggered:** Paychex review · Funding event
+
+**Evidence:**
+- Reddit post (Mar 28) asking for Paychex alternatives for F&B
+- $8M Series A announced Mar 15 — capital for systems overhaul
+- New CFO joined Apr 2026 — systems review window open
+
+---
+
+### Prospect 3 — Ironclad Builders LLC
+
+**Contact:** Raj Venkataraman · Owner / President
+**Email:** raj@ironcladbuilders.co
+**LinkedIn:** linkedin.com/in/rajvenkataraman
+**Company:** Ironclad Builders LLC · Construction · 95 FTE · $14M revenue · Denver, CO
+**HRIS today:** ADP Run
+**Fit Score:** 88
+
+**Why this person:**
+Owner-operator mode — direct decision maker. Firm is scaling fast on 1099 subs, a known ADP Run pain point.
+
+**Signals triggered:** ADP churn risk · 1099 volume spike
+
+**Evidence:**
+- 1099 volume up 3.2× YoY per public contractor filings
+- Hired first full-time controller in Mar — systems upgrade likely
+- Active on construction LinkedIn forum, cites payroll pain
+
+---
+
+### Prospect 4 — Sunset Resort Collective
+
+**Contact:** Priya Aaltonen · VP People
+**Email:** p.aaltonen@sunsetresorts.com
+**LinkedIn:** linkedin.com/in/priyaaaltonen
+**Company:** Sunset Resort Collective · Hospitality · 420 FTE · $61M revenue · Scottsdale, AZ
+**HRIS today:** Paychex Flex
+**Fit Score:** 86
+
+**Why this person:**
+VP People left detailed G2 review complaining about Paychex reporting gaps. 2× seasonal hiring surge coming.
+
+**Signals triggered:** Paychex review · Hiring surge
+
+**Evidence:**
+- G2 review (Apr 3): 2-star, cited reporting + tipped wage issues
+- Posted 112 seasonal roles in last 21 days
+- Spoke at HR Tech panel last year — open to new stacks
+
+---
+
+### Prospect 5 — Redstone Contracting Co.
+
+**Contact:** Elena Marchetti · Controller
+**Email:** elena@redstone-contracting.com
+**LinkedIn:** linkedin.com/in/elenamarchetti
+**Company:** Redstone Contracting Co. · Construction · 210 FTE · $29M revenue · Phoenix, AZ
+**HRIS today:** Gusto
+**Fit Score:** 83
+
+**Why this person:**
+Just moved off ADP to Gusto 4 months ago — likely already unhappy. Mid-switch prospects convert 2.3× higher.
+
+**Signals triggered:** Compliance flag · Tech stack change
+
+**Evidence:**
+- BuiltWith shows Gusto adoption in Jan 2026 (was ADP)
+- DOL wage audit closed Feb 2026 — compliance mandate fresh
+- Controller new to role, evaluating all vendors
+
+---
+
+## Stage 05 — Outreach
+
+**Purpose:** Each sequence is generated per prospect, per channel. BCP routes every message through brand voice + the specific context pulled in the account book.
+
+**Brand layer:** BCP · Wardell brand v1.2 · approved tone
+**CRM sync:** Qualified prospects → HubSpot contacts + deal on launch
+
+---
+
+### Prospect 1 · Danielle Okafor — Meridian Construction Group
+
+#### Email · Touch 1 · Day 1
+
+**Subject:** Danielle, quick question on ADP
+
+**Body:**
+> Danielle — saw your LinkedIn post in Feb about the 40% rate hike from ADP. That's brutal, especially on a 300+ FTE book.
+>
+> Three things I thought you should know before the next ADP renewal cycle:
+>
+> → The OSHA citation you got in March — the multi-state payroll piece that triggered it is exactly the gap Aria HR was built to close (certified payroll, multi-state, built for construction firsthand)
+>
+> → At your current growth rate (+74 in Q1), you'll hit the ADP Workforce pricing wall at ~400 FTE. The jump is another 30–35%
+>
+> → We've pulled 4 Austin-area construction firms off ADP in the last 12 months. Happy to intro you to one directly, no pitch from us
+>
+> Not asking for a call. Just didn't want you to walk into renewal blind.
+
+#### LinkedIn · Step 1 · Connection Request
+
+> Hi Danielle — your Feb post about the ADP rate hike hit exactly what we're seeing with 3 other Austin construction CFOs right now. Would love to connect.
+
+#### LinkedIn · Step 2 · Day 3 DM
+
+> Thanks for connecting. Not pitching — genuinely curious whether Meridian's looking at ADP alternatives before the next renewal. The firms we see hit hardest are the 300–500 FTE construction groups with multi-state crews. Your OSHA filing last month is the exact risk pattern we see ADP failing to cover.
+
+---
+
+### Prospect 2 · Marcus Trieu — Coastline Hospitality Partners
+
+#### Email · Touch 1 · Day 1
+
+**Subject:** Marcus, quick question on Paychex
+
+**Body:**
+> Marcus — congrats on the Series A. Saw your Reddit thread on Paychex and tipped-wage reporting — that problem gets exponentially worse post-funding when you scale F&B locations.
+>
+> Two things worth knowing:
+>
+> → Paychex Flex's tipped-wage reporting is the single most-cited reason hospitality groups switch off it after crossing $20M revenue (you're there)
+>
+> → Your new CFO has a 90-day window to rationalize systems before expansion locks you in. Now is literally the best time
+>
+> Happy to send over a 2-pager on how The Breakwater Group (180 FTE Miami hospitality) restructured theirs — no sales call, just the doc.
+
+#### LinkedIn · Step 1 · Connection Request
+
+> Marcus, saw your Reddit thread on Paychex tipped-wage reporting. Congrats on the Series A btw. Would love to connect — we work with a couple of similar-stage hospitality groups.
+
+#### LinkedIn · Step 2 · Day 3 DM
+
+> Marcus — quick one. The Paychex → hospitality-specific HRIS switch usually saves mid-sized groups like Coastline ~$80–120K/yr once tipped-wage reporting is automated. Given your new CFO + Series A timing, worth a look?
+
+#### Reddit · Community Play
+
+**Thread:** [r/smallbusiness] "Anyone migrated off Paychex for F&B? Tipped wage reporting is killing us"
+
+**Drafted reply (human review required):**
+> We saw exactly this at a similar-size F&B group last year. The root cause is that Paychex treats tipped wages as an afterthought module bolted onto their base payroll — it wasn't designed for hospitality. Three things that helped: (1) switching to a hospitality-native HRIS eliminated the manual reconciliation entirely, (2) automated 8233 and tip allocation reporting cut monthly close by 4 days...
+
+---
+
+## Summary — Pipeline Stats
+
+| Metric | Value |
+|---|---|
+| Signal-matched companies | 362 |
+| Qualified prospects (Account Book) | 87 |
+| Prospects shown (Score ≥ 80) | 5 |
+| Active signals | 5 of 6 |
+| Channels per prospect | Up to 3 (Email, LinkedIn, Reddit) |
+| CRM write-back | HubSpot · Wardell Workspace |
+| Enrichment tools | Bitscale + Clay |
+| Brand routing | BCP · Wardell v1.2 |
+
+---
+
+*GTM / Top of Funnel · Sequential Pipeline · v0.2 · Prashant handoff · Apr 2026*

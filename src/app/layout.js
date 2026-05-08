@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
   title: "GTM Engine",
-  description: "Account Book creation and Outreach for your business",
+  description: "GTM Engine is an account book creation and outreach tool for your business.",
 };
 
 export default function RootLayout({ children }) {

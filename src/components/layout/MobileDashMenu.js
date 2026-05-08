@@ -1,15 +1,15 @@
 import React, { useState } from 'react'
 import { Avatar, Button, Drawer, DrawerBody, DrawerCloseButton, DrawerContent, DrawerHeader, DrawerOverlay, HStack, VStack, useDisclosure, } from '@chakra-ui/react';
 import { RiMenuFill } from 'react-icons/ri';
-import { FaRegArrowAltCircleRight, FaStackOverflow, FaUserCircle } from 'react-icons/fa';
-import { IoCalendarOutline, IoChevronDownSharp, IoImage, IoPricetagOutline } from 'react-icons/io5';
+import { FaUserCircle } from 'react-icons/fa';
+import { IoPricetagOutline, IoSettingsOutline } from 'react-icons/io5';
 import { useUser } from '@/context/UserContext';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import Profile from '../dialogs/ProfileModal';
 import ConfirmBox from '@/components/dialogs/ConfirmBox';
 import { IoIosLogOut } from 'react-icons/io';
-import { MdDashboard, MdOutlineRateReview } from 'react-icons/md';
+import { MdDashboard, MdOutlineCampaign } from 'react-icons/md';
 // import ContactUs from '../dialogs/ContactUs';
 import { signOut } from 'next-auth/react';
 
@@ -23,7 +23,6 @@ const MobileDashMenu = () => {
     const { isOpen, onClose, onOpen } = useDisclosure();
     const profile = useDisclosure();
     const logout = useDisclosure();
-    const contact = useDisclosure();
 
     const logoutHandler = () => {
       logout.onClose();
@@ -53,14 +52,9 @@ const MobileDashMenu = () => {
         <DrawerBody className='bg-gray-800'>
         <VStack spacing={'4'} alignItems="flex-start">
             <LinkButton icon={<MdDashboard size={20}/>} active={params === 'dashboard' ? true :false} onClose={onClose} url="/dashboard" title="Dashboard" />
-            <LinkButton icon={<MdOutlineRateReview size={20}/>} active={params === 'review' ? true :false} onClose={onClose} url="/review" title="Review & Approve" />
-            <LinkButton icon={<IoCalendarOutline size={20}/>} active={params === 'calendar' ? true :false} onClose={onClose} url="/calendar" title="Content Calendar" />
-            <LinkButton icon={<IoImage size={20}/>} active={params === 'image' ? true :false} onClose={onClose} url="/image" title="Images" />
-            <LinkButton icon={<FaStackOverflow size={20}/>} active={params === 'context' ? true :false} onClose={onClose} url="/context" title="Context" />
-            <button onClick={contact.onOpen} className={`flex items-center gap-4 w-full text-white rounded-md p-2 px-4 font-semibold`}>
-                <IoPricetagOutline size={20} />
-                Pricing
-            </button>
+            <LinkButton icon={<MdOutlineCampaign size={20}/>} active={params === 'campaigns' ? true :false} onClose={onClose} url="/campaigns" title="Campaigns" />
+            <LinkButton icon={<IoSettingsOutline size={20}/>} active={params === 'settings' ? true :false} onClose={onClose} url="/settings" title="Settings" />
+            <LinkButton icon={<IoPricetagOutline size={20}/>} active={params === 'pricing' ? true :false} onClose={onClose} url="/pricing" title="Pricing" />
 
             <HStack
             position="absolute"
@@ -80,7 +74,6 @@ const MobileDashMenu = () => {
 
             <Profile isOpen={profile.isOpen} onClose={profile.onClose} user={user}/>
             <ConfirmBox isOpen={logout.isOpen} onClose={logout.onClose} action="Logout" handler={logoutHandler}/>
-            {/* <ContactUs isOpen={contact.isOpen} onClose={contact.onClose} /> */}
             </HStack>
         </VStack>
         </DrawerBody>

@@ -65,10 +65,10 @@ const Header = () => {
           <h1
             className={`
               font-bold text-xl transition-colors duration-300
-              ${scrolled ? "text-cyan-700" : "text-cyan-700"}
+              ${scrolled ? "text-sky-700" : "text-sky-700"}
             `}
           >
-            NextScale <span className="text-cyan-700">Services</span>
+            GTM <span className="text-sky-700">Engine</span>
           </h1>
         </Link>
       </div>
@@ -101,7 +101,7 @@ const Header = () => {
         ) : (
           <Link
             href="/dashboard"
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-tr from-cyan-800 to-cyan-300 text-white text-sm font-semibold"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-tr from-sky-800 to-sky-300 text-white text-sm font-semibold"
           >
             Dashboard
           </Link>
@@ -121,7 +121,7 @@ const Header = () => {
             <div className="flex justify-between items-center">
               <Link className='flex items-center justify-start gap-2 w-full' href={'/'}>
                 <img className='h-8' src="/logo.svg" alt="" />
-                <h1 className='text-gray-200 font-bold text-xl'>Services</h1>
+                <h1 className='text-gray-200 font-bold text-xl'>GTM Engine</h1>
               </Link>
               <DrawerCloseButton className="text-gray-400 border-2 border-gray-400" />
             </div>
