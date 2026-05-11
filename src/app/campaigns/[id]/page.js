@@ -5,11 +5,14 @@ import Loader from '@/components/shared/Loader'
 import { useUser } from '@/context/UserContext'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   FiBook,
   FiChevronLeft,
+  FiDownload,
+  FiGlobe,
   FiLayers,
+  FiPhone,
   FiPlay,
   FiSend,
 } from 'react-icons/fi'
@@ -70,72 +73,6 @@ function normalizeResults(r) {
   }
 }
 
-/** Deterministic demo rows so UI matches campaign context before backend exists */
-function buildDemoProspects(campaign) {
-  const signalPool = Array.isArray(campaign.signals) && campaign.signals.length
-    ? campaign.signals
-    : ['Hiring spike', 'ATS migration', 'New VP Sales']
-
-  const rows = [
-    {
-      prospect: 'Northwind Logistics',
-      person: 'Jordan Lee',
-      role: 'VP Operations',
-      email: 'j.lee@northwind-logistics.example',
-      why: 'Recent 3PL RFP tied to warehouse automation push; persona matches economic buyer.',
-      signals: [signalPool[0] ?? 'Growth signal', 'Series B press'].filter(
-        Boolean
-      ),
-      score: 91,
-    },
-    {
-      prospect: 'Helio Analytics',
-      person: 'Samira Khan',
-      role: 'Head of RevOps',
-      email: 'skhan@helio-analytics.example',
-      why: 'Tool stack change window; RevOps lead owns outbound tooling budget.',
-      signals: [signalPool[1] ?? 'Stack change', 'New hire in sales ops'],
-      score: 86,
-    },
-    {
-      prospect: 'Cedar Retail Co.',
-      person: 'Alex Morgan',
-      role: 'Director of HRIS',
-      email: 'amorgan@cedar-retail.example',
-      why: 'Evidence of payroll consolidation plus open reqs in store ops.',
-      signals: [signalPool[2] ?? 'HR tech refresh', 'Store expansion'].filter(
-        Boolean
-      ),
-      score: 79,
-    },
-    {
-      prospect: 'Boltline Manufacturing',
-      person: 'Chris Ortiz',
-      role: 'CIO',
-      email: 'c.ortiz@boltline.example',
-      why: 'Security questionnaire filed; indicates vendor review for comms tooling.',
-      signals: ['Security review', signalPool[0] ?? 'Ops efficiency'],
-      score: 74,
-    },
-    {
-      prospect: 'Lumen Health',
-      person: 'Priya Shah',
-      role: 'Chief of Staff',
-      email: 'pshah@lumen-health.example',
-      why: 'Calendar density with vendors; stakeholder map shows budget approval path.',
-      signals: ['Vendor meetings', 'New compliance initiative'],
-      score: 82,
-    },
-  ]
-
-  const name = campaign.name || 'Campaign'
-  return rows.map((row, i) => ({
-    ...row,
-    prospect:
-      i === 0 ? `${row.prospect} · ${name.slice(0, 24)}` : row.prospect,
-  }))
-}
-
 const DRIP_STEPS = [
   {
     day: 1,
@@ -177,8 +114,133 @@ function scoreClass(score) {
   return 'bg-amber-50 text-amber-800 ring-amber-100'
 }
 
+/** Non-empty URL for <a href>; accepts domain-only strings. */
+function hrefForWebsite(display) {
+  if (typeof display !== 'string') return null
+  const s = display.trim()
+  if (!s || s === '—') return null
+  if (/^https?:\/\//i.test(s)) return s
+  return `https://${s}`
+}
+
+function websiteLinkLabel(display) {
+  const href = hrefForWebsite(display)
+  if (!href) return display
+  try {
+    return new URL(href).hostname.replace(/^www\./i, '')
+  } catch {
+    return display
+  }
+}
+
+function telHref(phoneDisplay) {
+  if (typeof phoneDisplay !== 'string') return null
+  const digits = phoneDisplay.replace(/[^\d+]/g, '')
+  return digits.length > 3 ? digits : null
+}
+
+const LINKEDIN_KIND_LABEL = { person: 'Person', company: 'Company' }
+
+function csvEscapeCell(val) {
+  if (val == null || val === undefined) return ''
+  const s = String(val)
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
+}
+
+/** Treat UI placeholder em dash as empty in exports. */
+function csvCell(v) {
+  if (v == null || v === undefined) return ''
+  const s = String(v).trim()
+  if (s === '—') return ''
+  return s
+}
+
+function linkedInUrlForKind(urls, kind) {
+  if (!Array.isArray(urls)) return ''
+  const hit = urls.find((u) => u && u.kind === kind && u.url)
+  return hit ? String(hit.url).trim() : ''
+}
+
+function slugifyFilenamePart(name) {
+  const base = String(name || 'campaign')
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 80)
+  return base || 'campaign'
+}
+
+function buildAccountBookCsv(rows) {
+  const headers = [
+    'Prospect',
+    'Person',
+    'Role',
+    'Email',
+    'Phone',
+    'Website',
+    'LinkedIn (person)',
+    'LinkedIn (company)',
+    'Location',
+    'PIN / ZIP',
+    'Why this person',
+    'Signals',
+    'Score',
+    'Maps rating',
+    'Maps reviews',
+    'Primary source',
+  ]
+  const lines = [headers.map(csvEscapeCell).join(',')]
+  for (const row of rows) {
+    const signals = Array.isArray(row.signals) ? row.signals.join('; ') : ''
+    lines.push(
+      [
+        csvCell(row.prospect),
+        csvCell(row.person),
+        csvCell(row.role),
+        csvCell(row.email),
+        csvCell(row.phone),
+        csvCell(row.website),
+        linkedInUrlForKind(row.linkedinUrls, 'person'),
+        linkedInUrlForKind(row.linkedinUrls, 'company'),
+        csvCell(row.location),
+        csvCell(row.pincode),
+        csvCell(row.why),
+        signals,
+        row.score != null ? String(row.score) : '',
+        typeof row.mapsRating === 'number' ? String(row.mapsRating) : '',
+        typeof row.mapsReviewsCount === 'number'
+          ? String(row.mapsReviewsCount)
+          : '',
+        csvCell(row.primarySource),
+      ]
+        .map(csvEscapeCell)
+        .join(',')
+    )
+  }
+  return `\uFEFF${lines.join('\r\n')}`
+}
+
+function downloadTextFile(filename, text, mimeType) {
+  const blob = new Blob([text], {
+    type: mimeType || 'text/csv;charset=utf-8',
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 const CampaignDetailPage = () => {
   const user = useUser()
+  const hasCampaignAccess = user?.payment === true
   const params = useParams()
   const rawId = params?.id
   const id = Array.isArray(rawId) ? rawId[0] : rawId
@@ -187,6 +249,8 @@ const CampaignDetailPage = () => {
   const [notFound, setNotFound] = useState(false)
 
   const [accountBookProspects, setAccountBookProspects] = useState([])
+  const [prospectListLoading, setProspectListLoading] = useState(false)
+  const [retryingBook, setRetryingBook] = useState(false)
   const [runSession, setRunSession] = useState(null)
   const [launchSession, setLaunchSession] = useState(null)
 
@@ -216,6 +280,60 @@ const CampaignDetailPage = () => {
     }
   }, [results, accountBookProspects.length])
 
+  const silentReloadCampaign = useCallback(async () => {
+    if (!id || typeof id !== 'string') return null
+    try {
+      const res = await fetch(`/api/campaigns/${id}`)
+      if (!res.ok) return null
+      const data = await res.json()
+      setCampaign(data)
+      return data
+    } catch {
+      return null
+    }
+  }, [id])
+
+  const loadProspects = useCallback(
+    async (opts = {}) => {
+      if (!id || typeof id !== 'string' || !hasCampaignAccess) return
+      const silent = opts.silent === true
+      if (!silent) setProspectListLoading(true)
+      try {
+        const res = await fetch(`/api/campaigns/${id}/prospects`)
+        if (!res.ok) {
+          throw new Error('Could not load account book rows')
+        }
+        const payload = await res.json()
+        setAccountBookProspects(Array.isArray(payload.prospects) ? payload.prospects : [])
+      } catch (e) {
+        console.error(e)
+        if (!silent) toast.error(e.message || 'Could not load account book')
+      } finally {
+        if (!silent) setProspectListLoading(false)
+      }
+    },
+    [id, hasCampaignAccess]
+  )
+
+  useEffect(() => {
+    if (!id || typeof id !== 'string' || !hasCampaignAccess) return
+    if (!campaign?._id) return
+    loadProspects({ silent: false })
+  }, [id, campaign?._id, hasCampaignAccess, loadProspects])
+
+  useEffect(() => {
+    if (campaign?.accountBookBuildStatus !== 'running') return undefined
+    const iv = window.setInterval(() => {
+      silentReloadCampaign()
+      loadProspects({ silent: true })
+    }, 4500)
+    return () => window.clearInterval(iv)
+  }, [
+    campaign?.accountBookBuildStatus,
+    silentReloadCampaign,
+    loadProspects,
+  ])
+
   useEffect(() => {
     if (!id || typeof id !== 'string') {
       setLoading(false)
@@ -223,6 +341,12 @@ const CampaignDetailPage = () => {
       return
     }
     if (user === undefined || user === null) return
+    if (!hasCampaignAccess) {
+      setLoading(false)
+      setNotFound(false)
+      setCampaign(null)
+      return
+    }
 
     let cancelled = false
     ;(async () => {
@@ -230,6 +354,13 @@ const CampaignDetailPage = () => {
       setNotFound(false)
       try {
         const res = await fetch(`/api/campaigns/${id}`)
+        if (res.status === 403) {
+          if (!cancelled) {
+            setCampaign(null)
+            setNotFound(false)
+          }
+          return
+        }
         if (res.status === 404) {
           if (!cancelled) {
             setNotFound(true)
@@ -257,7 +388,7 @@ const CampaignDetailPage = () => {
     return () => {
       cancelled = true
     }
-  }, [user, id])
+  }, [user, id, hasCampaignAccess])
 
   const handleRun = () => {
     if (!campaign) return
@@ -275,14 +406,43 @@ const CampaignDetailPage = () => {
     })
   }
 
-  const handleCreateAccountBook = () => {
-    if (!campaign) return
-    const rows = buildDemoProspects(campaign)
-    setAccountBookProspects(rows)
-    toast.success('Account book created', {
-      description: `${rows.length} demo prospects loaded for this campaign (replace with live enrichment when wired).`,
-    })
+  const handleRetryAccountBookBuild = async () => {
+    if (!campaign || !id) return
+    setRetryingBook(true)
+    try {
+      const res = await fetch(`/api/campaigns/${id}/account-book/run`, {
+        method: 'POST',
+      })
+      const body = await res.json().catch(() => ({}))
+      await silentReloadCampaign()
+      await loadProspects({ silent: true })
+      if (!res.ok) {
+        toast.error(body.error || 'Could not refresh the workspace book')
+        return
+      }
+      toast.success('Account book refreshed')
+    } catch (e) {
+      toast.error(e?.message || 'Could not rebuild account book')
+    } finally {
+      setRetryingBook(false)
+    }
   }
+
+  const handleExportAccountBook = useCallback(() => {
+    if (accountBookProspects.length === 0) {
+      toast.message('Nothing to export', {
+        description: 'Prospects appear here after your account book is built.',
+      })
+      return
+    }
+    const csv = buildAccountBookCsv(accountBookProspects)
+    const slug = slugifyFilenamePart(campaign?.name)
+    const stamp = new Date().toISOString().slice(0, 10)
+    downloadTextFile(`account-book-${slug}-${stamp}.csv`, csv)
+    toast.success('Export ready', {
+      description: 'CSV downloaded — open in Excel or Sheets.',
+    })
+  }, [accountBookProspects, campaign?.name])
 
   const handleLaunchCampaign = () => {
     if (!campaign) return
@@ -301,6 +461,30 @@ const CampaignDetailPage = () => {
 
   if (user === undefined || user === null) {
     return <Loader fullScreen />
+  }
+
+  if (!hasCampaignAccess) {
+    return (
+      <div className="min-h-screen bg-slate-50 px-5 py-10 sm:px-8">
+        <div className="mx-auto max-w-3xl">
+          <Link
+            href="/campaigns"
+            className="inline-flex items-center gap-1 text-sm font-semibold text-sky-800 hover:text-sky-900"
+          >
+            <FiChevronLeft aria-hidden />
+            All campaigns
+          </Link>
+          <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+            <p className="text-lg font-semibold text-slate-800">
+              You do not have access to this premium feature.
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              Opening campaigns requires an active premium plan.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (loading) {
@@ -342,6 +526,7 @@ const CampaignDetailPage = () => {
   }
 
   const signals = Array.isArray(campaign.signals) ? campaign.signals : []
+  const bookStatus = campaign.accountBookBuildStatus || 'idle'
   const avgScore =
     accountBookProspects.length > 0
       ? Math.round(
@@ -403,11 +588,16 @@ const CampaignDetailPage = () => {
               </button>
               <button
                 type="button"
-                onClick={handleCreateAccountBook}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 lg:flex-none"
+                onClick={handleRetryAccountBookBuild}
+                disabled={
+                  bookStatus === 'running' || retryingBook
+                }
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 lg:flex-none"
               >
                 <FiBook aria-hidden />
-                Create account book
+                {bookStatus === 'running'
+                  ? 'Updating book…'
+                  : 'Rebuild account book'}
               </button>
               <button
                 type="button"
@@ -436,6 +626,33 @@ const CampaignDetailPage = () => {
       </div>
 
       <div className="mx-auto max-w-6xl space-y-8 px-5 py-8 sm:px-8 lg:py-10">
+        {bookStatus === 'running' && (
+          <div
+            className="flex flex-wrap items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-950 shadow-sm"
+            role="status"
+          >
+            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white ring-2 ring-sky-200">
+              <span className="size-5 animate-pulse rounded-full bg-sky-500/80" />
+            </span>
+            <div>
+              <p className="font-semibold">Someone is refining your workspace</p>
+              <p className="mt-1 text-xs text-sky-900/80">
+                {campaign.accountBookStepLabel?.trim() ||
+                  'Still arranging the pieces—feel free to take a pause.'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {bookStatus === 'failed' && campaign.accountBookBuildError?.trim() && (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-950 shadow-sm">
+              <p className="font-semibold">The workspace pass paused unexpectedly</p>
+              <p className="mt-1 text-xs text-rose-900/90">
+                {campaign.accountBookBuildError.slice(0, 320)}
+              </p>
+            </div>
+          )}
+
         {/* Metrics */}
         <section aria-labelledby="metrics-heading">
           <div className="mb-4 flex items-center gap-2">
@@ -565,7 +782,7 @@ const CampaignDetailPage = () => {
 
         {/* Account book */}
         <section aria-labelledby="account-book-heading">
-          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
                 <FiBook className="text-slate-800" aria-hidden />
@@ -580,64 +797,139 @@ const CampaignDetailPage = () => {
                 Prospect coverage, fit scores, and evidence your reps can trust.
               </p>
             </div>
-            {accountBookProspects.length > 0 && (
-              <div className="flex flex-wrap gap-2 text-xs font-semibold">
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-800 ring-1 ring-slate-200">
-                  {accountBookProspects.length} prospects
-                </span>
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-800 ring-1 ring-emerald-100">
-                  Avg score {avgScore}
-                </span>
-                <span className="rounded-full bg-sky-50 px-3 py-1 text-sky-900 ring-1 ring-sky-100">
-                  {signals.length} campaign signals
-                </span>
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <button
+                type="button"
+                onClick={handleExportAccountBook}
+                disabled={
+                  accountBookProspects.length === 0 || prospectListLoading
+                }
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                title={
+                  accountBookProspects.length === 0
+                    ? 'Add prospects to export'
+                    : 'Download account book as CSV (Excel-compatible)'
+                }
+              >
+                <FiDownload className="text-slate-600" aria-hidden />
+                Export
+              </button>
+              {accountBookProspects.length > 0 && (
+                <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-800 ring-1 ring-slate-200">
+                    {accountBookProspects.length} prospects
+                  </span>
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-800 ring-1 ring-emerald-100">
+                    Avg score {avgScore ?? '—'}
+                  </span>
+                  <span className="rounded-full bg-sky-50 px-3 py-1 text-sky-900 ring-1 ring-sky-100">
+                    {signals.length} campaign signals
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
 
           {accountBookProspects.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center shadow-inner">
-              <p className="text-base font-semibold text-slate-800">
-                No account book yet
-              </p>
-              <p className="mx-auto mt-2 max-w-lg text-sm text-slate-600">
-                Run enrichment to attach companies, decision makers, and
-                evidence-backed &quot;why this person&quot; rows. This preview
-                loads demo rows after you create the book.
-              </p>
-              <button
-                type="button"
-                onClick={handleCreateAccountBook}
-                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                <FiBook aria-hidden />
-                Create account book
-              </button>
+              {prospectListLoading ? (
+                <div className="flex flex-col items-center gap-3 py-8">
+                  <Loader fullScreen={false} />
+                  <p className="text-sm font-medium text-slate-700">
+                    Pulling enriched rows…
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-base font-semibold text-slate-800">
+                    {bookStatus === 'running'
+                      ? 'Your book is opening up…'
+                      : bookStatus === 'failed'
+                        ? 'We paused before filling every row.'
+                        : 'No rows yet'}
+                  </p>
+                  <p className="mx-auto mt-2 max-w-lg text-sm text-slate-600">
+                    {bookStatus === 'running'
+                      ? 'The workspace assistant is finishing touches in the background. This view refreshes on its own.'
+                      : bookStatus === 'failed'
+                        ? 'You can widen locations or loosen filters and try again below.'
+                        : 'When a campaign spins up, enriched companies and contacts land here sorted by prominence from public signals.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleRetryAccountBookBuild}
+                    disabled={bookStatus === 'running' || retryingBook}
+                    className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  >
+                    <FiBook aria-hidden />
+                    {bookStatus === 'running'
+                      ? 'Still working…'
+                      : 'Rebuild account book'}
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="min-w-[920px] w-full border-collapse text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                      <th className="px-4 py-3">Prospect</th>
-                      <th className="px-4 py-3">Person</th>
-                      <th className="px-4 py-3">Email</th>
-                      <th className="min-w-[16rem] px-4 py-3">
+              <div
+                className="h-[min(70vh,32rem)] overflow-auto overscroll-contain"
+                role="region"
+                aria-label="Account book prospects"
+              >
+                <table className="min-w-[1320px] w-full border-collapse text-left text-sm">
+                  <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-[1] [&_th]:bg-slate-50">
+                    <tr className="border-b border-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      <th className="px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
+                        Prospect
+                      </th>
+                      <th className="px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
+                        Person
+                      </th>
+                      <th className="px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
+                        Email
+                      </th>
+                      <th className="min-w-[7.5rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
+                        Phone
+                      </th>
+                      <th className="min-w-[6.5rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
+                        Website
+                      </th>
+                      <th className="min-w-[7rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
+                        LinkedIn
+                      </th>
+                      <th className="min-w-[12rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
+                        Location
+                      </th>
+                      <th className="min-w-[5rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
+                        PIN / ZIP
+                      </th>
+                      <th className="min-w-[16rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
                         Why this person
                       </th>
-                      <th className="min-w-[10rem] px-4 py-3">Signals</th>
-                      <th className="px-4 py-3 text-right">Score</th>
+                      <th className="min-w-[10rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
+                        Signals
+                      </th>
+                      <th className="px-4 py-3 text-right shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
+                        Score
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {accountBookProspects.map((row) => (
+                    {accountBookProspects.map((row, idx) => (
                       <tr
-                        key={`${row.email}-${row.person}`}
+                        key={row._id || `${idx}-${row.email}-${row.person}`}
                         className="hover:bg-slate-50/80"
                       >
                         <td className="align-top px-4 py-3 font-semibold text-slate-900">
-                          {row.prospect}
+                          <span>{row.prospect}</span>
+                          {typeof row.mapsRating === 'number' && (
+                            <span className="mt-1 block text-[11px] font-medium text-amber-800">
+                              ★{row.mapsRating.toFixed(1)}
+                              {typeof row.mapsReviewsCount === 'number'
+                                ? ` · ${row.mapsReviewsCount.toLocaleString()} reviews`
+                                : ''}
+                            </span>
+                          )}
                         </td>
                         <td className="align-top px-4 py-3 text-slate-800">
                           <span className="font-medium">{row.person}</span>
@@ -649,13 +941,84 @@ const CampaignDetailPage = () => {
                           <span className="break-all">{row.email}</span>
                         </td>
                         <td className="align-top px-4 py-3 text-slate-700">
+                          {row.phone && row.phone !== '—' && telHref(row.phone) ? (
+                            <a
+                              href={`tel:${telHref(row.phone)}`}
+                              className="inline-flex items-center gap-1 break-all text-sky-700 underline decoration-sky-200 underline-offset-2 hover:text-sky-900"
+                            >
+                              <FiPhone
+                                className="shrink-0 text-sky-600"
+                                aria-hidden
+                              />
+                              {row.phone}
+                            </a>
+                          ) : (
+                            <span className="break-all">{row.phone ?? '—'}</span>
+                          )}
+                        </td>
+                        <td className="align-top px-4 py-3 text-slate-700">
+                          {hrefForWebsite(row.website) ? (
+                            <a
+                              href={hrefForWebsite(row.website)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex max-w-[14rem] items-center gap-1 truncate text-sky-700 underline decoration-sky-200 underline-offset-2 hover:text-sky-900"
+                              title={row.website}
+                            >
+                              <FiGlobe
+                                className="shrink-0 text-sky-600"
+                                aria-hidden
+                              />
+                              <span className="truncate">
+                                {websiteLinkLabel(row.website)}
+                              </span>
+                            </a>
+                          ) : (
+                            <span>{row.website ?? '—'}</span>
+                          )}
+                        </td>
+                        <td className="align-top px-4 py-3 text-slate-700">
+                          {Array.isArray(row.linkedinUrls) &&
+                          row.linkedinUrls.length > 0 ? (
+                            <div className="flex flex-col gap-1.5">
+                              {row.linkedinUrls.map((entry, li) => (
+                                <a
+                                  key={`${entry.url}-${li}`}
+                                  href={entry.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 underline decoration-sky-200 underline-offset-2 hover:text-sky-900"
+                                >
+                                  <FaLinkedin
+                                    className="shrink-0 text-[13px]"
+                                    aria-hidden
+                                  />
+                                  {LINKEDIN_KIND_LABEL[entry.kind] ||
+                                    entry.kind ||
+                                    'Profile'}
+                                </a>
+                              ))}
+                            </div>
+                          ) : (
+                            <span>—</span>
+                          )}
+                        </td>
+                        <td className="align-top px-4 py-3 text-slate-700">
+                          <span className="break-words text-slate-800">
+                            {row.location ?? '—'}
+                          </span>
+                        </td>
+                        <td className="align-top px-4 py-3 text-slate-700 tabular-nums">
+                          {row.pincode ?? '—'}
+                        </td>
+                        <td className="align-top px-4 py-3 text-slate-700">
                           {row.why}
                         </td>
                         <td className="align-top px-4 py-3">
                           <div className="flex flex-wrap gap-1">
-                            {row.signals.map((sig) => (
+                            {(row.signals || []).map((sig, i) => (
                               <span
-                                key={sig}
+                                key={`${sig}-${i}`}
                                 className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-900 ring-1 ring-violet-100"
                               >
                                 {sig}

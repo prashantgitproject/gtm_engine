@@ -9,6 +9,12 @@ export async function GET(request, { params }) {
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (user.payment !== true) {
+      return NextResponse.json(
+        { error: "You do not have access to this premium feature" },
+        { status: 403 }
+      );
+    }
 
     const { id } = params;
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {

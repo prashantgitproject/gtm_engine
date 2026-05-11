@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getMongoUserFromSession } from "@/libs/mongoUser";
 import { Campaign } from "@/models/Campaign";
+import { normalizeSourcingProfile } from "@/libs/sourcingProfile";
 
 function parseSignals(raw) {
   if (raw == null) return [];
@@ -18,6 +19,12 @@ export async function GET() {
     const user = await getMongoUserFromSession();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (user.payment !== true) {
+      return NextResponse.json(
+        { error: "You do not have access to this premium feature" },
+        { status: 403 }
+      );
     }
 
     const campaigns = await Campaign.find({ user: user._id })
@@ -44,6 +51,12 @@ export async function POST(request) {
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (user.payment !== true) {
+      return NextResponse.json(
+        { error: "You do not have access to this premium feature" },
+        { status: 403 }
+      );
+    }
 
     const body = await request.json();
     const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -56,12 +69,29 @@ export async function POST(request) {
       typeof body.description === "string" ? body.description.trim() : "";
     const signals = parseSignals(body.signals);
 
+    const rawSp = body.sourcingProfile;
+    const userFileName =
+      rawSp &&
+      typeof rawSp.file_name === "string" &&
+      rawSp.file_name.trim();
+
+    const sourcingProfile = normalizeSourcingProfile(body.sourcingProfile);
+    if (!userFileName) {
+      const slug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_|_$/g, "")
+        .slice(0, 80);
+      if (slug) sourcingProfile.file_name = slug;
+    }
+
     const doc = await Campaign.create({
       user: user._id,
       name,
       goal,
       description,
       signals,
+      sourcingProfile,
       status: "draft",
       results: { sends: 0, replies: 0, meetingsBooked: 0 },
     });

@@ -11,6 +11,8 @@ export async function getMongoUserFromSession() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return null;
   await connectDB();
-  const user = await User.findOne({ email: session.user.email }).select("_id email");
+  const user = await User.findOne({ email: session.user.email }).select(
+    "_id email payment"
+  );
   return user;
 }
