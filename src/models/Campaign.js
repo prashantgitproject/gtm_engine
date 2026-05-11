@@ -88,6 +88,15 @@ const campaignSchema = new Schema(
       type: sourcingProfileSchema,
       default: undefined,
     },
+
+    /** LLM-generated multi-channel drip (per-prospect content lives on Prospect) */
+    dripCampaignStatus: {
+      type: String,
+      enum: ["idle", "generating", "complete", "failed"],
+      default: "idle",
+    },
+    dripCampaignError: { type: String, default: "" },
+    dripCampaignGeneratedAt: { type: Date },
   },
   { timestamps: true }
 );

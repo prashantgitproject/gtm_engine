@@ -1,7 +1,9 @@
 'use client'
 
+import { AccountBookProspectsTable } from '@/components/campaigns/AccountBookProspectsTable'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import Loader from '@/components/shared/Loader'
+import { buildAccountBookCsv, slugifyFilenamePart } from '@/libs/campaignAccountBookCsv'
 import { useUser } from '@/context/UserContext'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -10,15 +12,12 @@ import {
   FiBook,
   FiChevronLeft,
   FiDownload,
-  FiGlobe,
   FiLayers,
-  FiPhone,
-  FiPlay,
   FiSend,
+  FiZap,
 } from 'react-icons/fi'
-import { FaLinkedin } from 'react-icons/fa'
+import { FaLinkedin, FaWhatsapp } from 'react-icons/fa'
 import { MdOutlineCampaign, MdOutlineEmail } from 'react-icons/md'
-import { SiReddit } from 'react-icons/si'
 import { toast } from 'sonner'
 
 const STATUS_LABEL = {
@@ -27,6 +26,9 @@ const STATUS_LABEL = {
   running: 'Running',
   completed: 'Completed',
 }
+
+/** Flip to true when “Rebuild account book” should be offered again. */
+const ACCOUNT_BOOK_REBUILD_ENABLED = false
 
 function formatDate(iso) {
   if (!iso) return '—'
@@ -73,156 +75,6 @@ function normalizeResults(r) {
   }
 }
 
-const DRIP_STEPS = [
-  {
-    day: 1,
-    channel: 'email',
-    title: 'Insight-led opener',
-    body:
-      'Short note referencing account-book trigger + pain hypothesis; plain text, one CTA.',
-    icon: MdOutlineEmail,
-  },
-  {
-    day: 2,
-    channel: 'linkedin',
-    title: 'Connect + context DM',
-    body:
-      'Connection request note tied to milestone; DM references mutual signal without spray-and-pray cadence.',
-    icon: FaLinkedin,
-  },
-  {
-    day: 4,
-    channel: 'email',
-    title: 'Proof + specificity',
-    body:
-      'Case snapshot aligned to persona; tighter ask focused on scheduling a working session.',
-    icon: MdOutlineEmail,
-  },
-  {
-    day: 7,
-    channel: 'reddit',
-    title: 'Community-native touch',
-    body:
-      'Participate where prospect org members discuss category pain; DM only after value add in-thread.',
-    icon: SiReddit,
-  },
-]
-
-function scoreClass(score) {
-  if (score >= 85) return 'bg-emerald-50 text-emerald-800 ring-emerald-100'
-  if (score >= 78) return 'bg-sky-50 text-sky-800 ring-sky-100'
-  return 'bg-amber-50 text-amber-800 ring-amber-100'
-}
-
-/** Non-empty URL for <a href>; accepts domain-only strings. */
-function hrefForWebsite(display) {
-  if (typeof display !== 'string') return null
-  const s = display.trim()
-  if (!s || s === '—') return null
-  if (/^https?:\/\//i.test(s)) return s
-  return `https://${s}`
-}
-
-function websiteLinkLabel(display) {
-  const href = hrefForWebsite(display)
-  if (!href) return display
-  try {
-    return new URL(href).hostname.replace(/^www\./i, '')
-  } catch {
-    return display
-  }
-}
-
-function telHref(phoneDisplay) {
-  if (typeof phoneDisplay !== 'string') return null
-  const digits = phoneDisplay.replace(/[^\d+]/g, '')
-  return digits.length > 3 ? digits : null
-}
-
-const LINKEDIN_KIND_LABEL = { person: 'Person', company: 'Company' }
-
-function csvEscapeCell(val) {
-  if (val == null || val === undefined) return ''
-  const s = String(val)
-  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
-  return s
-}
-
-/** Treat UI placeholder em dash as empty in exports. */
-function csvCell(v) {
-  if (v == null || v === undefined) return ''
-  const s = String(v).trim()
-  if (s === '—') return ''
-  return s
-}
-
-function linkedInUrlForKind(urls, kind) {
-  if (!Array.isArray(urls)) return ''
-  const hit = urls.find((u) => u && u.kind === kind && u.url)
-  return hit ? String(hit.url).trim() : ''
-}
-
-function slugifyFilenamePart(name) {
-  const base = String(name || 'campaign')
-    .trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 80)
-  return base || 'campaign'
-}
-
-function buildAccountBookCsv(rows) {
-  const headers = [
-    'Prospect',
-    'Person',
-    'Role',
-    'Email',
-    'Phone',
-    'Website',
-    'LinkedIn (person)',
-    'LinkedIn (company)',
-    'Location',
-    'PIN / ZIP',
-    'Why this person',
-    'Signals',
-    'Score',
-    'Maps rating',
-    'Maps reviews',
-    'Primary source',
-  ]
-  const lines = [headers.map(csvEscapeCell).join(',')]
-  for (const row of rows) {
-    const signals = Array.isArray(row.signals) ? row.signals.join('; ') : ''
-    lines.push(
-      [
-        csvCell(row.prospect),
-        csvCell(row.person),
-        csvCell(row.role),
-        csvCell(row.email),
-        csvCell(row.phone),
-        csvCell(row.website),
-        linkedInUrlForKind(row.linkedinUrls, 'person'),
-        linkedInUrlForKind(row.linkedinUrls, 'company'),
-        csvCell(row.location),
-        csvCell(row.pincode),
-        csvCell(row.why),
-        signals,
-        row.score != null ? String(row.score) : '',
-        typeof row.mapsRating === 'number' ? String(row.mapsRating) : '',
-        typeof row.mapsReviewsCount === 'number'
-          ? String(row.mapsReviewsCount)
-          : '',
-        csvCell(row.primarySource),
-      ]
-        .map(csvEscapeCell)
-        .join(',')
-    )
-  }
-  return `\uFEFF${lines.join('\r\n')}`
-}
-
 function downloadTextFile(filename, text, mimeType) {
   const blob = new Blob([text], {
     type: mimeType || 'text/csv;charset=utf-8',
@@ -251,8 +103,7 @@ const CampaignDetailPage = () => {
   const [accountBookProspects, setAccountBookProspects] = useState([])
   const [prospectListLoading, setProspectListLoading] = useState(false)
   const [retryingBook, setRetryingBook] = useState(false)
-  const [runSession, setRunSession] = useState(null)
-  const [launchSession, setLaunchSession] = useState(null)
+  const [dripDesignLoading, setDripDesignLoading] = useState(false)
 
   const results = useMemo(
     () => normalizeResults(campaign?.results),
@@ -305,6 +156,17 @@ const CampaignDetailPage = () => {
         }
         const payload = await res.json()
         setAccountBookProspects(Array.isArray(payload.prospects) ? payload.prospects : [])
+        setCampaign((prev) => {
+          if (!prev?._id) return prev
+          return {
+            ...prev,
+            dripCampaignStatus:
+              payload.dripCampaignStatus ?? prev.dripCampaignStatus,
+            dripCampaignError: payload.dripCampaignError ?? prev.dripCampaignError,
+            dripCampaignGeneratedAt:
+              payload.dripCampaignGeneratedAt ?? prev.dripCampaignGeneratedAt,
+          }
+        })
       } catch (e) {
         console.error(e)
         if (!silent) toast.error(e.message || 'Could not load account book')
@@ -390,22 +252,6 @@ const CampaignDetailPage = () => {
     }
   }, [user, id, hasCampaignAccess])
 
-  const handleRun = () => {
-    if (!campaign) return
-    if (accountBookProspects.length === 0) {
-      toast.message('Create an account book first', {
-        description:
-          'You need prospect rows before GTM Engine can run signal refresh and scoring.',
-      })
-      return
-    }
-    const stamp = new Date().toISOString()
-    setRunSession(stamp)
-    toast.success('Run started', {
-      description: `Refreshing signals for ${accountBookProspects.length} prospects · job queued`,
-    })
-  }
-
   const handleRetryAccountBookBuild = async () => {
     if (!campaign || !id) return
     setRetryingBook(true)
@@ -444,18 +290,55 @@ const CampaignDetailPage = () => {
     })
   }, [accountBookProspects, campaign?.name])
 
+  const handleCreateDripCampaign = async () => {
+    if (!campaign || !id) return
+    if (accountBookProspects.length === 0) {
+      toast.message('Account book required', {
+        description: 'Add prospects before generating a drip sequence.',
+      })
+      return
+    }
+    setDripDesignLoading(true)
+    try {
+      const res = await fetch(`/api/campaigns/${id}/drip/generate`, {
+        method: 'POST',
+      })
+      const body = await res.json().catch(() => ({}))
+      await silentReloadCampaign()
+      await loadProspects({ silent: true })
+      if (!res.ok) {
+        toast.error(body.error || 'Could not create drip campaign')
+        return
+      }
+      toast.success('Drip campaign ready', {
+        description: `Personalized sequences saved for ${body.prospectCount ?? accountBookProspects.length} prospects.`,
+      })
+    } catch (e) {
+      toast.error(e?.message || 'Could not create drip campaign')
+      await silentReloadCampaign()
+      await loadProspects({ silent: true })
+    } finally {
+      setDripDesignLoading(false)
+    }
+  }
+
   const handleLaunchCampaign = () => {
     if (!campaign) return
+    if (campaign.dripCampaignStatus !== 'complete') {
+      toast.message('Finish drip design first', {
+        description: 'Create a drip campaign so every row has channel-specific copy.',
+      })
+      return
+    }
     if (accountBookProspects.length === 0) {
       toast.message('Add an account book before launch', {
         description: 'Prospects power the personalized drip across channels.',
       })
       return
     }
-    setLaunchSession(new Date().toISOString())
-    toast.success('Launch queued', {
+    toast.message('Launch is not wired yet', {
       description:
-        'Email · LinkedIn · Reddit sequence scheduled with persona-aware copy.',
+        'When we ship execution, this will arm email, LinkedIn, and WhatsApp sends with the sequences you edited in each row.',
     })
   }
 
@@ -537,6 +420,26 @@ const CampaignDetailPage = () => {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {dripDesignLoading ? (
+        <div
+          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white/95 px-6 text-center backdrop-blur-[2px]"
+          role="status"
+          aria-live="polite"
+        >
+          <div
+            className="size-14 shrink-0 animate-spin rounded-full border-4 border-sky-600 border-t-transparent"
+            aria-hidden
+          />
+          <p className="mt-8 max-w-md text-lg font-semibold text-slate-900">
+            Designing a personalised drip campaign for your account book
+          </p>
+          <p className="mt-3 max-w-md text-sm leading-relaxed text-slate-600">
+            We are generating email, LinkedIn, and WhatsApp steps for every
+            prospect using your campaign goal and book context. Large lists can
+            take a couple of minutes — keep this tab open.
+          </p>
+        </div>
+      ) : null}
       <div className="border-b border-slate-200 bg-white px-5 py-6 sm:px-8">
         <div className="mx-auto max-w-6xl">
           <Link
@@ -580,17 +483,16 @@ const CampaignDetailPage = () => {
             <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-col xl:flex-row">
               <button
                 type="button"
-                onClick={handleRun}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 lg:flex-none"
-              >
-                <FiPlay className="text-emerald-600" aria-hidden />
-                Run
-              </button>
-              <button
-                type="button"
                 onClick={handleRetryAccountBookBuild}
                 disabled={
-                  bookStatus === 'running' || retryingBook
+                  !ACCOUNT_BOOK_REBUILD_ENABLED ||
+                  bookStatus === 'running' ||
+                  retryingBook
+                }
+                title={
+                  ACCOUNT_BOOK_REBUILD_ENABLED
+                    ? undefined
+                    : 'Account book rebuild is temporarily unavailable.'
                 }
                 className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 lg:flex-none"
               >
@@ -601,27 +503,34 @@ const CampaignDetailPage = () => {
               </button>
               <button
                 type="button"
+                onClick={handleCreateDripCampaign}
+                disabled={
+                  bookStatus === 'running' ||
+                  dripDesignLoading ||
+                  accountBookProspects.length === 0
+                }
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-950 shadow-sm hover:bg-sky-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 lg:flex-none"
+              >
+                <FiZap className="text-amber-500" aria-hidden />
+                {campaign.dripCampaignStatus === 'complete'
+                  ? 'Regenerate drip campaign'
+                  : 'Create drip campaign'}
+              </button>
+              <button
+                type="button"
                 onClick={handleLaunchCampaign}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-800 to-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:from-sky-900 hover:to-cyan-700 lg:flex-none"
+                disabled={
+                  campaign.dripCampaignStatus !== 'complete' ||
+                  accountBookProspects.length === 0 ||
+                  bookStatus === 'running'
+                }
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-800 to-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:from-sky-900 hover:to-cyan-700 disabled:cursor-not-allowed disabled:from-slate-400 disabled:to-slate-400 disabled:shadow-none lg:flex-none"
               >
                 <FiSend aria-hidden />
                 Launch campaign
               </button>
             </div>
           </div>
-
-          {(runSession || launchSession) && (
-            <p className="mt-3 text-xs text-slate-500">
-              {runSession && (
-                <span className="mr-4">
-                  Last run queued {formatDate(runSession)}
-                </span>
-              )}
-              {launchSession && (
-                <span>Launch armed {formatDate(launchSession)}</span>
-              )}
-            </p>
-          )}
         </div>
       </div>
 
@@ -649,6 +558,16 @@ const CampaignDetailPage = () => {
               <p className="font-semibold">The workspace pass paused unexpectedly</p>
               <p className="mt-1 text-xs text-rose-900/90">
                 {campaign.accountBookBuildError.slice(0, 320)}
+              </p>
+            </div>
+          )}
+
+        {campaign.dripCampaignStatus === 'failed' &&
+          campaign.dripCampaignError?.trim() && (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-950 shadow-sm">
+              <p className="font-semibold">Drip generation did not finish</p>
+              <p className="mt-1 text-xs text-rose-900/90">
+                {String(campaign.dripCampaignError).slice(0, 320)}
               </p>
             </div>
           )}
@@ -745,7 +664,7 @@ const CampaignDetailPage = () => {
             </div>
             <div>
               <p className="text-sm font-semibold text-slate-800">
-                Channel mix (design preview)
+                Channel mix (planned — email · LinkedIn · WhatsApp)
               </p>
               <ul className="mt-3 space-y-2 text-sm text-slate-700">
                 <li className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
@@ -754,7 +673,7 @@ const CampaignDetailPage = () => {
                     Email
                   </span>
                   <span className="font-semibold tabular-nums text-slate-900">
-                    48%
+                    45%
                   </span>
                 </li>
                 <li className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
@@ -763,13 +682,13 @@ const CampaignDetailPage = () => {
                     LinkedIn
                   </span>
                   <span className="font-semibold tabular-nums text-slate-900">
-                    35%
+                    38%
                   </span>
                 </li>
                 <li className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
                   <span className="flex items-center gap-2">
-                    <SiReddit className="text-orange-600" />
-                    Reddit
+                    <FaWhatsapp className="text-emerald-600" aria-hidden />
+                    WhatsApp
                   </span>
                   <span className="font-semibold tabular-nums text-slate-900">
                     17%
@@ -858,7 +777,16 @@ const CampaignDetailPage = () => {
                   <button
                     type="button"
                     onClick={handleRetryAccountBookBuild}
-                    disabled={bookStatus === 'running' || retryingBook}
+                    disabled={
+                      !ACCOUNT_BOOK_REBUILD_ENABLED ||
+                      bookStatus === 'running' ||
+                      retryingBook
+                    }
+                    title={
+                      ACCOUNT_BOOK_REBUILD_ENABLED
+                        ? undefined
+                        : 'Account book rebuild is temporarily unavailable.'
+                    }
                     className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                   >
                     <FiBook aria-hidden />
@@ -870,175 +798,12 @@ const CampaignDetailPage = () => {
               )}
             </div>
           ) : (
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div
-                className="h-[min(70vh,32rem)] overflow-auto overscroll-contain"
-                role="region"
-                aria-label="Account book prospects"
-              >
-                <table className="min-w-[1320px] w-full border-collapse text-left text-sm">
-                  <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-[1] [&_th]:bg-slate-50">
-                    <tr className="border-b border-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                      <th className="px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
-                        Prospect
-                      </th>
-                      <th className="px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
-                        Person
-                      </th>
-                      <th className="px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
-                        Email
-                      </th>
-                      <th className="min-w-[7.5rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
-                        Phone
-                      </th>
-                      <th className="min-w-[6.5rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
-                        Website
-                      </th>
-                      <th className="min-w-[7rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
-                        LinkedIn
-                      </th>
-                      <th className="min-w-[12rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
-                        Location
-                      </th>
-                      <th className="min-w-[5rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
-                        PIN / ZIP
-                      </th>
-                      <th className="min-w-[16rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
-                        Why this person
-                      </th>
-                      <th className="min-w-[10rem] px-4 py-3 shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
-                        Signals
-                      </th>
-                      <th className="px-4 py-3 text-right shadow-[inset_0_-1px_0_0_rgb(226_232_240)]">
-                        Score
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {accountBookProspects.map((row, idx) => (
-                      <tr
-                        key={row._id || `${idx}-${row.email}-${row.person}`}
-                        className="hover:bg-slate-50/80"
-                      >
-                        <td className="align-top px-4 py-3 font-semibold text-slate-900">
-                          <span>{row.prospect}</span>
-                          {typeof row.mapsRating === 'number' && (
-                            <span className="mt-1 block text-[11px] font-medium text-amber-800">
-                              ★{row.mapsRating.toFixed(1)}
-                              {typeof row.mapsReviewsCount === 'number'
-                                ? ` · ${row.mapsReviewsCount.toLocaleString()} reviews`
-                                : ''}
-                            </span>
-                          )}
-                        </td>
-                        <td className="align-top px-4 py-3 text-slate-800">
-                          <span className="font-medium">{row.person}</span>
-                          <span className="block text-xs text-slate-500">
-                            {row.role}
-                          </span>
-                        </td>
-                        <td className="align-top px-4 py-3 text-slate-700">
-                          <span className="break-all">{row.email}</span>
-                        </td>
-                        <td className="align-top px-4 py-3 text-slate-700">
-                          {row.phone && row.phone !== '—' && telHref(row.phone) ? (
-                            <a
-                              href={`tel:${telHref(row.phone)}`}
-                              className="inline-flex items-center gap-1 break-all text-sky-700 underline decoration-sky-200 underline-offset-2 hover:text-sky-900"
-                            >
-                              <FiPhone
-                                className="shrink-0 text-sky-600"
-                                aria-hidden
-                              />
-                              {row.phone}
-                            </a>
-                          ) : (
-                            <span className="break-all">{row.phone ?? '—'}</span>
-                          )}
-                        </td>
-                        <td className="align-top px-4 py-3 text-slate-700">
-                          {hrefForWebsite(row.website) ? (
-                            <a
-                              href={hrefForWebsite(row.website)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex max-w-[14rem] items-center gap-1 truncate text-sky-700 underline decoration-sky-200 underline-offset-2 hover:text-sky-900"
-                              title={row.website}
-                            >
-                              <FiGlobe
-                                className="shrink-0 text-sky-600"
-                                aria-hidden
-                              />
-                              <span className="truncate">
-                                {websiteLinkLabel(row.website)}
-                              </span>
-                            </a>
-                          ) : (
-                            <span>{row.website ?? '—'}</span>
-                          )}
-                        </td>
-                        <td className="align-top px-4 py-3 text-slate-700">
-                          {Array.isArray(row.linkedinUrls) &&
-                          row.linkedinUrls.length > 0 ? (
-                            <div className="flex flex-col gap-1.5">
-                              {row.linkedinUrls.map((entry, li) => (
-                                <a
-                                  key={`${entry.url}-${li}`}
-                                  href={entry.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 underline decoration-sky-200 underline-offset-2 hover:text-sky-900"
-                                >
-                                  <FaLinkedin
-                                    className="shrink-0 text-[13px]"
-                                    aria-hidden
-                                  />
-                                  {LINKEDIN_KIND_LABEL[entry.kind] ||
-                                    entry.kind ||
-                                    'Profile'}
-                                </a>
-                              ))}
-                            </div>
-                          ) : (
-                            <span>—</span>
-                          )}
-                        </td>
-                        <td className="align-top px-4 py-3 text-slate-700">
-                          <span className="break-words text-slate-800">
-                            {row.location ?? '—'}
-                          </span>
-                        </td>
-                        <td className="align-top px-4 py-3 text-slate-700 tabular-nums">
-                          {row.pincode ?? '—'}
-                        </td>
-                        <td className="align-top px-4 py-3 text-slate-700">
-                          {row.why}
-                        </td>
-                        <td className="align-top px-4 py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {(row.signals || []).map((sig, i) => (
-                              <span
-                                key={`${sig}-${i}`}
-                                className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-900 ring-1 ring-violet-100"
-                              >
-                                {sig}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="align-top px-4 py-3 text-right">
-                          <span
-                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold tabular-nums ring-1 ${scoreClass(row.score)}`}
-                          >
-                            {row.score}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <AccountBookProspectsTable
+              campaignId={id}
+              rows={accountBookProspects}
+              dripReady={campaign.dripCampaignStatus === 'complete'}
+              onReload={() => loadProspects({ silent: true })}
+            />
           )}
         </section>
 
@@ -1052,44 +817,54 @@ const CampaignDetailPage = () => {
               Personalized drip outreach
             </h2>
             <p className="mt-1 text-sm text-slate-600">
-              Multi-channel sequencing with persona-aware copy: email for depth,
-              LinkedIn for social proof and timing, Reddit for contextual
-              community plays.
+              Each prospect row gets its own five- to seven-step sequence across
+              email, LinkedIn, and WhatsApp, written from your campaign goal and
+              account-book context. Open any row to review or edit copy; nothing
+              sends until we ship the execution layer.
             </p>
+            {campaign.dripCampaignStatus === 'complete' &&
+            campaign.dripCampaignGeneratedAt ? (
+              <p className="mt-2 text-xs font-medium text-emerald-800">
+                Last generated {formatDate(campaign.dripCampaignGeneratedAt)}
+              </p>
+            ) : null}
           </div>
-          <div className="grid gap-4 lg:grid-cols-4">
-            {DRIP_STEPS.map((step) => {
-              const Icon = step.icon
-              const channelStyles =
-                step.channel === 'email'
-                  ? 'border-sky-200 bg-sky-50'
-                  : step.channel === 'linkedin'
-                    ? 'border-sky-300 bg-white'
-                    : 'border-orange-200 bg-orange-50/70'
+          <div className="grid gap-4 lg:grid-cols-3">
+            {[
+              {
+                channel: 'email',
+                title: 'Email — depth and narrative',
+                body: 'Multi-touch threads for proof, ROI, and scheduling asks. When live, we will track opens, clicks, bounces, and reply rate per step.',
+                Icon: MdOutlineEmail,
+                border: 'border-sky-200 bg-sky-50',
+              },
+              {
+                channel: 'linkedin',
+                title: 'LinkedIn — timing and trust',
+                body: 'Connection notes and short DMs aligned to signals from the book. Execution will enforce daily invite caps and thread state so reps do not double-ping.',
+                Icon: FaLinkedin,
+                border: 'border-slate-200 bg-white',
+              },
+              {
+                channel: 'whatsapp',
+                title: 'WhatsApp — high-intent follow-up',
+                body: 'Short, consent-aware nudges after warmer touches. Sending will require opted-in numbers and template compliance; metrics will mirror read receipts and replies.',
+                Icon: FaWhatsapp,
+                border: 'border-emerald-200 bg-emerald-50/60',
+              },
+            ].map((step) => {
+              const Icon = step.Icon
               return (
                 <article
-                  key={step.day + step.channel}
-                  className={`rounded-2xl border p-5 shadow-sm ${channelStyles}`}
+                  key={step.channel}
+                  className={`rounded-2xl border p-5 shadow-sm ${step.border}`}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-700 ring-1 ring-slate-200">
-                      Day {step.day}
-                    </span>
-                    <Icon
-                      className="shrink-0 text-slate-800"
-                      size={22}
-                      aria-hidden
-                    />
-                  </div>
-                  <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                    {step.channel === 'reddit'
-                      ? 'Reddit'
-                      : step.channel === 'linkedin'
-                        ? 'LinkedIn'
-                        : 'Email'}{' '}
-                    touch
-                  </p>
-                  <h3 className="mt-1 text-base font-bold text-slate-900">
+                  <Icon
+                    className="shrink-0 text-slate-800"
+                    size={24}
+                    aria-hidden
+                  />
+                  <h3 className="mt-3 text-base font-bold text-slate-900">
                     {step.title}
                   </h3>
                   <p className="mt-2 text-sm leading-relaxed text-slate-700">
@@ -1099,11 +874,29 @@ const CampaignDetailPage = () => {
               )
             })}
           </div>
-          <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            <span className="font-semibold text-slate-900">Guardrails: </span>
-            copy references account-book fields (pain, timing, triggers), caps
-            daily LinkedIn touches, and keeps Reddit participation value-first
-            before any DM.
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <span className="font-semibold text-slate-900">
+                Metrics we will expose at send time
+              </span>
+              <ul className="mt-2 list-inside list-disc space-y-1 text-slate-700">
+                <li>Per-step delivery, replies, and meetings booked</li>
+                <li>Channel lift compared to single-channel baselines</li>
+                <li>Time-to-first-reply and sequence completion funnel</li>
+              </ul>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <span className="font-semibold text-slate-900">
+                Guardrails (design + future execution)
+              </span>
+              <p className="mt-2">
+                Copy is grounded in account-book fields (role, company, signals,
+                “why this person”). LinkedIn cadence stays conservative; WhatsApp
+                only where a number exists and policy allows. Regenerating a drip
+                overwrites stored sequences — rebuild the account book first if
+                you need a fresh audience.
+              </p>
+            </div>
           </div>
         </section>
 

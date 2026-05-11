@@ -53,9 +53,34 @@ function sourcingPlain(campaignDoc) {
   return { ...sp };
 }
 
+function mapsPlaceDedupeKey(item) {
+  const u = String(item?.url ?? "").trim();
+  if (u) return u;
+  return String(item?.placeId ?? item?.place_id ?? "").trim();
+}
+
+function dedupeMapsItems(primary, extra) {
+  const seen = new Set();
+  for (const item of primary) {
+    const k = mapsPlaceDedupeKey(item);
+    if (k) seen.add(k);
+  }
+  const out = [...primary];
+  for (const item of extra) {
+    const k = mapsPlaceDedupeKey(item);
+    if (k) {
+      if (seen.has(k)) continue;
+      seen.add(k);
+    }
+    out.push(item);
+  }
+  return out;
+}
+
 /**
- * Build prospects for a campaign: parallel lead + Maps scrapes, then LinkedIn
- * profile/company enrichment when URLs exist on lead rows.
+ * Build prospects for a campaign: parallel lead + Maps scrapes (targeting ~70%
+ * leads / ~30% maps, with extra Maps when the lead scraper under-delivers),
+ * then LinkedIn profile/company enrichment when URLs exist on lead rows.
  */
 export async function runAccountBookBuild(campaignIdStr, userIdStr) {
   await connectDB();
@@ -84,6 +109,9 @@ export async function runAccountBookBuild(campaignIdStr, userIdStr) {
   campaignDoc.accountBookBuildError = "";
   campaignDoc.accountBookBuildStartedAt = new Date();
   campaignDoc.accountBookBuildFinishedAt = null;
+  campaignDoc.dripCampaignStatus = "idle";
+  campaignDoc.dripCampaignError = "";
+  campaignDoc.dripCampaignGeneratedAt = null;
   await campaignDoc.save();
 
   const userOid = campaignDoc.user;
@@ -99,25 +127,48 @@ export async function runAccountBookBuild(campaignIdStr, userIdStr) {
       500
     );
 
+    const leadTarget = Math.floor((fetchCap * 7) / 10);
+    const mapsTarget = fetchCap - leadTarget;
+
     const [leadRes, mapsRes] = await Promise.all([
-      runLeadScraperFromProfile(effectiveSourcing, {
-        limit: fetchCap,
-      }),
-      runGoogleMapsScraperFromProfile(effectiveSourcing, {
-        limit: Math.min(
-          fetchCap,
-          Math.max(
-            Number(effectiveSourcing.maps_max_crawled_places_per_search) || 50,
-            1
+      leadTarget > 0
+        ? runLeadScraperFromProfile(
+            { ...effectiveSourcing, fetch_count: leadTarget },
+            { limit: leadTarget }
           )
-        ),
-      }),
+        : Promise.resolve({ items: [] }),
+      mapsTarget > 0
+        ? runGoogleMapsScraperFromProfile(effectiveSourcing, {
+            limit: mapsTarget,
+          })
+        : Promise.resolve({ items: [] }),
     ]);
 
     await bumpCampaignStep(campaignOid, STEP_MESSAGES[2]);
 
-    const leadItems = Array.isArray(leadRes?.items) ? leadRes.items : [];
-    const mapsItems = Array.isArray(mapsRes?.items) ? mapsRes.items : [];
+    let leadItems = Array.isArray(leadRes?.items) ? leadRes.items : [];
+    let mapsItems = Array.isArray(mapsRes?.items) ? mapsRes.items : [];
+
+    if (leadTarget > 0) {
+      leadItems = leadItems.slice(0, leadTarget);
+    }
+    if (mapsTarget > 0) {
+      mapsItems = mapsItems.slice(0, mapsTarget);
+    }
+
+    let shortfall = fetchCap - leadItems.length - mapsItems.length;
+    if (shortfall > 0) {
+      const { items: moreRaw } = await runGoogleMapsScraperFromProfile(
+        effectiveSourcing,
+        { limit: shortfall }
+      );
+      const more = Array.isArray(moreRaw) ? moreRaw : [];
+      mapsItems = dedupeMapsItems(mapsItems, more);
+      const maxMaps = fetchCap - leadItems.length;
+      if (mapsItems.length > maxMaps) {
+        mapsItems = mapsItems.slice(0, maxMaps);
+      }
+    }
 
     for (const item of mapsItems) {
       const { displayScore, discoveryScore, mapsRating, mapsReviewsCount } =
