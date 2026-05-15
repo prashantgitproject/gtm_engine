@@ -13,6 +13,7 @@ import {
   SIZE_OPTIONS,
 } from '@/constants/campaignSourcingOptions'
 import {
+  Box,
   Button,
   FormControl,
   FormHelperText,
@@ -25,15 +26,21 @@ import {
   ModalFooter,
   ModalHeader,
   ModalOverlay,
+  Radio,
+  RadioGroup,
   Select,
   Spinner,
+  Stack,
+  Text,
   Textarea,
   useDisclosure,
 } from '@chakra-ui/react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { FiPlus } from 'react-icons/fi'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FiMail, FiPlus } from 'react-icons/fi'
+import { FaLinkedin } from 'react-icons/fa'
+import { SiWhatsapp } from 'react-icons/si'
 import { MdOutlineCampaign } from 'react-icons/md'
 import { toast } from 'sonner'
 
@@ -44,7 +51,6 @@ const initialForm = {
   description: '',
   contact_location: '',
   contact_state: '',
-  contact_city: '',
   contact_not_city: '',
   contact_not_location: '',
   company_domain: '',
@@ -59,13 +65,15 @@ const initialForm = {
   min_revenue: '',
   seniority_level: [],
   size: [],
+  maps_location_query: '',
+  maps_search_strings: '',
+  maps_max_crawled_places_per_search: '',
 }
 
 function sourcingPayloadFromForm(form) {
   return {
     contact_location: form.contact_location,
     contact_state: form.contact_state,
-    contact_city: form.contact_city,
     contact_not_city: form.contact_not_city,
     contact_not_location: form.contact_not_location,
     company_domain: form.company_domain,
@@ -80,6 +88,9 @@ function sourcingPayloadFromForm(form) {
     min_revenue: form.min_revenue,
     seniority_level: form.seniority_level,
     size: form.size,
+    maps_location_query: form.maps_location_query,
+    maps_search_strings: form.maps_search_strings,
+    maps_max_crawled_places_per_search: form.maps_max_crawled_places_per_search,
   }
 }
 
@@ -140,6 +151,27 @@ function formatResultsSummary(r) {
   return `${sends} sent · ${replies} replies · ${meetingsBooked} meetings`
 }
 
+function OutreachChannelPill({ icon, label, hint, variant }) {
+  const styles =
+    variant === 'ok'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-900 ring-emerald-100'
+      : variant === 'pending'
+        ? 'border-amber-200 bg-amber-50 text-amber-950 ring-amber-100'
+        : variant === 'soon'
+          ? 'border-slate-200 bg-slate-50 text-slate-600 ring-slate-100'
+          : 'border-slate-200 bg-white text-slate-700 ring-slate-100'
+  return (
+    <span
+      className={`inline-flex max-w-full items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium ring-1 ${styles}`}
+      title={hint}
+    >
+      <span className="shrink-0 opacity-80">{icon}</span>
+      <span className="font-semibold">{label}</span>
+      <span className="truncate text-[11px] font-normal opacity-90">{hint}</span>
+    </span>
+  )
+}
+
 const AGENT_ROTATING_HINTS = [
   'Quietly gathering context…',
   'Cross-checking a few credible sources…',
@@ -159,9 +191,61 @@ const CampaignsPage = () => {
   const [workspaceAgentSession, setWorkspaceAgentSession] = useState(null)
   const [agentStepLine, setAgentStepLine] = useState('')
   const [hintIndex, setHintIndex] = useState(0)
+  const [outreachEmail, setOutreachEmail] = useState(null)
+  const [outreachLinkedin, setOutreachLinkedin] = useState(null)
+  const [outreachWhatsapp, setOutreachWhatsapp] = useState(null)
+
+  const [accountBookMode, setAccountBookMode] = useState('scrape')
+  const [importFile, setImportFile] = useState(null)
+  const importFileInputRef = useRef(null)
+
+  const resetCreateModalFields = useCallback(() => {
+    setForm(initialForm)
+    setImportFile(null)
+    if (importFileInputRef.current) importFileInputRef.current.value = ''
+  }, [])
+
+  const closeCreateModalAndReset = useCallback(() => {
+    resetCreateModalFields()
+    setAccountBookMode('scrape')
+    createModal.onClose()
+  }, [createModal, resetCreateModalFields])
+
+  useEffect(() => {
+    if (!hasCampaignAccess || user === undefined || user === null) return undefined
+    let cancelled = false
+    async function loadOutreach() {
+      try {
+        const [emailRes, linkedinRes, whatsappRes] = await Promise.all([
+          fetch('/api/settings/email-domain'),
+          fetch('/api/settings/linkedin'),
+          fetch('/api/settings/whatsapp'),
+        ])
+        const emailData = emailRes.ok ? await emailRes.json() : null
+        const linkedinData = linkedinRes.ok ? await linkedinRes.json() : null
+        const whatsappData = whatsappRes.ok ? await whatsappRes.json() : null
+        if (!cancelled) {
+          setOutreachEmail(emailData)
+          setOutreachLinkedin(linkedinData)
+          setOutreachWhatsapp(whatsappData)
+        }
+      } catch {
+        if (!cancelled) {
+          setOutreachEmail(null)
+          setOutreachLinkedin(null)
+          setOutreachWhatsapp(null)
+        }
+      }
+    }
+    loadOutreach()
+    return () => {
+      cancelled = true
+    }
+  }, [hasCampaignAccess, user])
 
   useEffect(() => {
     if (!workspaceAgentSession?.campaignId) return undefined
+    if (workspaceAgentSession.phase === 'import') return undefined
     const id = workspaceAgentSession.campaignId
 
     async function pollStep() {
@@ -180,7 +264,7 @@ const CampaignsPage = () => {
     pollStep()
     const i = window.setInterval(pollStep, 1600)
     return () => window.clearInterval(i)
-  }, [workspaceAgentSession?.campaignId])
+  }, [workspaceAgentSession?.campaignId, workspaceAgentSession?.phase])
 
   useEffect(() => {
     if (!workspaceAgentSession) return undefined
@@ -239,8 +323,13 @@ const CampaignsPage = () => {
       toast.error('Campaign name is required')
       return
     }
+    if (accountBookMode === 'import' && !importFile) {
+      toast.error('Choose a CSV or Excel file to import your account book')
+      return
+    }
     setSubmitting(true)
     setAgentStepLine('')
+    const mode = accountBookMode
     try {
       const res = await fetch('/api/campaigns', {
         method: 'POST',
@@ -250,7 +339,9 @@ const CampaignsPage = () => {
           goal: form.goal.trim(),
           signals: form.signals,
           description: form.description.trim(),
-          sourcingProfile: sourcingPayloadFromForm(form),
+          accountBookOrigin: mode === 'import' ? 'import' : 'scrape',
+          sourcingProfile:
+            mode === 'import' ? {} : sourcingPayloadFromForm(form),
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -260,15 +351,41 @@ const CampaignsPage = () => {
       }
       const cid = String(data._id)
       createModal.onClose()
-      setWorkspaceAgentSession({ campaignId: cid })
+      setWorkspaceAgentSession({
+        campaignId: cid,
+        phase: mode === 'import' ? 'import' : 'scrape',
+      })
       setCampaigns((prev) => [{ ...data, _id: cid }, ...prev])
+
+      if (mode === 'import') {
+        const fd = new FormData()
+        fd.append('file', importFile)
+        const runRes = await fetch(`/api/campaigns/${cid}/account-book/import`, {
+          method: 'POST',
+          body: fd,
+        })
+        const runBody = await runRes.json().catch(() => ({}))
+
+        resetCreateModalFields()
+        await loadCampaigns()
+
+        if (!runRes.ok) {
+          toast.error(runBody.error || 'Could not import your account book')
+          return
+        }
+        toast.success('Campaign ready', {
+          description: `Imported ${runBody.prospectCount ?? 0} prospect(s). Opening your workspace.`,
+        })
+        router.push(`/campaigns/${cid}`)
+        return
+      }
 
       const runRes = await fetch(`/api/campaigns/${cid}/account-book/run`, {
         method: 'POST',
       })
       const runBody = await runRes.json().catch(() => ({}))
 
-      setForm(initialForm)
+      resetCreateModalFields()
       await loadCampaigns()
 
       if (!runRes.ok) {
@@ -322,6 +439,65 @@ const CampaignsPage = () => {
               Create and open campaigns tied to your workspace. Only you can see
               campaigns you create.
             </p>
+            <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Campaign outreach
+                </span>
+                <OutreachChannelPill
+                  icon={<FiMail size={14} aria-hidden />}
+                  label="Email"
+                  hint={
+                    outreachEmail?.configured
+                      ? outreachEmail.authenticated
+                        ? outreachEmail.domain
+                          ? `Sending domain · ${outreachEmail.domain}`
+                          : 'Connected'
+                        : outreachEmail.domain
+                          ? `DNS pending · ${outreachEmail.domain}`
+                          : 'DNS pending'
+                      : 'Not connected'
+                  }
+                  variant={
+                    outreachEmail?.configured
+                      ? outreachEmail.authenticated
+                        ? 'ok'
+                        : 'pending'
+                      : 'muted'
+                  }
+                />
+                <OutreachChannelPill
+                  icon={<FaLinkedin size={14} aria-hidden />}
+                  label="LinkedIn"
+                  hint={
+                    outreachLinkedin?.connected
+                      ? outreachLinkedin.linkupAccountId
+                        ? `Connected · ${outreachLinkedin.linkupAccountId}`
+                        : 'Connected'
+                      : 'Not connected'
+                  }
+                  variant={outreachLinkedin?.connected ? 'ok' : 'muted'}
+                />
+                <OutreachChannelPill
+                  icon={<SiWhatsapp size={14} aria-hidden />}
+                  label="WhatsApp"
+                  hint={
+                    outreachWhatsapp?.connected
+                      ? outreachWhatsapp.displayPhone
+                        ? `Cloud API · ${outreachWhatsapp.displayPhone}`
+                        : 'Cloud API · connected'
+                      : 'Not connected'
+                  }
+                  variant={outreachWhatsapp?.connected ? 'ok' : 'muted'}
+                />
+              </div>
+              <Link
+                href="/settings"
+                className="text-sm font-semibold text-sky-800 underline-offset-2 hover:underline"
+              >
+                Manage connections
+              </Link>
+            </div>
           </div>
           <button
             type="button"
@@ -445,7 +621,7 @@ const CampaignsPage = () => {
 
       <Modal
         isOpen={createModal.isOpen}
-        onClose={createModal.onClose}
+        onClose={closeCreateModalAndReset}
         size="2xl"
         isCentered
       >
@@ -514,20 +690,72 @@ const CampaignsPage = () => {
                 />
               </FormControl>
 
+              <div className="mt-2 border-t border-slate-200 pt-4">
+                <FormLabel className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  Account book
+                </FormLabel>
+                <RadioGroup
+                  value={accountBookMode}
+                  onChange={setAccountBookMode}
+                  mt={3}
+                >
+                  <Stack spacing={3}>
+                    <Radio value="scrape" colorScheme="blue">
+                      Build from signals (sourcing &amp; enrichment)
+                    </Radio>
+                    <Radio value="import" colorScheme="blue">
+                      Import my own list (CSV, Excel .xlsx/.xls, or .ods)
+                    </Radio>
+                  </Stack>
+                </RadioGroup>
+                {accountBookMode === 'import' ? (
+                  <Box
+                    mt={4}
+                    rounded="lg"
+                    borderWidth="1px"
+                    borderColor="gray.200"
+                    bg="gray.50"
+                    px={4}
+                    py={3}
+                  >
+                    <Text fontSize="sm" color="gray.700">
+                      The first sheet needs <strong>prospect</strong> (company),{' '}
+                      <strong>person</strong> (contact name), and at least one{' '}
+                      <strong>email</strong> (person or company).{' '}
+                      <strong>Phone</strong> can be in a person or company phone
+                      column; either is fine. Extra columns (LinkedIn, website,
+                      signals, dossier, etc.) are stored on each prospect.
+                    </Text>
+                    <FormControl mt={3}>
+                      <Input
+                        ref={importFileInputRef}
+                        type="file"
+                        accept=".csv,.xlsx,.xls,.ods,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                        py={1}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0]
+                          setImportFile(f || null)
+                        }}
+                      />
+                      <FormHelperText>
+                        Max ~2,500 data rows · first sheet only · up to ~8 MB
+                      </FormHelperText>
+                    </FormControl>
+                  </Box>
+                ) : null}
+              </div>
+
+              {accountBookMode === 'scrape' ? (
+                <>
               <div className="border-t border-slate-200 pt-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
-                Location
+                Lead targeting
               </div>
 
               <FormControl mb={3} mt={3}>
-                <FormLabel>Country / region</FormLabel>
-                <FormHelperText mb={1} fontSize="sm">
-                  Lead scraper: use supported countries only — United States,
-                  Germany, India, United Kingdom (any casing). Google Maps also
-                  uses any extra regions you list here (e.g. Canada).
-                </FormHelperText>
+                <FormLabel>Country</FormLabel>
                 <Textarea
                   size="md"
-                  placeholder="India, United Kingdom"
+                  placeholder="United States, India, …"
                   rows={2}
                   value={form.contact_location}
                   onChange={(e) =>
@@ -539,17 +767,10 @@ const CampaignsPage = () => {
                 />
               </FormControl>
               <FormControl mb={3}>
-                <FormLabel>State / region (lead targeting)</FormLabel>
-                <FormHelperText mb={1} fontSize="sm">
-                  Lead scraper: comma-separated states or provinces; combined
-                  with countries above as lowercase{' '}
-                  <code>state, country</code> (e.g. Delhi →{' '}
-                  <code>delhi, india</code>). Leave blank for country-wide lead
-                  search. Also included in the Google Maps location string.
-                </FormHelperText>
+                <FormLabel>State</FormLabel>
                 <Textarea
                   size="md"
-                  placeholder="Delhi, Uttar Pradesh"
+                  placeholder="Comma-separated"
                   rows={2}
                   value={form.contact_state}
                   onChange={(e) =>
@@ -561,25 +782,7 @@ const CampaignsPage = () => {
                 />
               </FormControl>
               <FormControl mb={3}>
-                <FormLabel>Cities (maps and display)</FormLabel>
-                <FormHelperText mb={1} fontSize="sm">
-                  Google Maps location: comma-separated cities (e.g. Bangalore,
-                  Noida). Not sent to the lead scraper as{' '}
-                  <code>city, country</code> — that format causes API errors; use
-                  states + countries for leads instead.
-                </FormHelperText>
-                <Textarea
-                  size="md"
-                  placeholder="Bangalore, New Delhi, Noida"
-                  rows={2}
-                  value={form.contact_city}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, contact_city: e.target.value }))
-                  }
-                />
-              </FormControl>
-              <FormControl mb={3}>
-                <FormLabel>Cities to exclude</FormLabel>
+                <FormLabel>Exclude cities</FormLabel>
                 <Textarea
                   size="md"
                   placeholder="Comma-separated"
@@ -594,7 +797,7 @@ const CampaignsPage = () => {
                 />
               </FormControl>
               <FormControl mb={4}>
-                <FormLabel>Regions to exclude</FormLabel>
+                <FormLabel>Exclude regions</FormLabel>
                 <Textarea
                   size="md"
                   placeholder="Comma-separated"
@@ -632,7 +835,7 @@ const CampaignsPage = () => {
                 <FormLabel>Industries</FormLabel>
                 <MultiOptionDropdown
                   popoverTitle="Industries"
-                  helperText="Only standardized industries below are sent to lead sourcing (search to narrow the list)."
+                  helperText="Search to narrow the list."
                   options={INDUSTRY_OPTIONS}
                   value={form.company_industry}
                   onChange={(next) =>
@@ -785,7 +988,7 @@ const CampaignsPage = () => {
                 />
               </FormControl>
               <FormControl mb={4}>
-                <FormLabel>How many contacts to pull</FormLabel>
+                <FormLabel>Leads to fetch</FormLabel>
                 <Input
                   size="md"
                   type="number"
@@ -799,6 +1002,61 @@ const CampaignsPage = () => {
                   }
                 />
               </FormControl>
+
+              <div className="border-t border-slate-200 pt-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Optional — Google Maps
+              </div>
+              <p className="mb-4 mt-2 text-sm text-slate-600">
+                Add local businesses after lead sourcing. Leave blank to skip.
+              </p>
+
+              <FormControl mb={3}>
+                <FormLabel>Location</FormLabel>
+                <Input
+                  size="md"
+                  placeholder="Bangalore, India"
+                  value={form.maps_location_query}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      maps_location_query: e.target.value,
+                    }))
+                  }
+                />
+              </FormControl>
+              <FormControl mb={3}>
+                <FormLabel>Search terms</FormLabel>
+                <Textarea
+                  size="md"
+                  placeholder="Comma-separated, e.g. Coaching institute, Coworking"
+                  rows={2}
+                  value={form.maps_search_strings}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      maps_search_strings: e.target.value,
+                    }))
+                  }
+                />
+              </FormControl>
+              <FormControl mb={4}>
+                <FormLabel>Places to fetch</FormLabel>
+                <Input
+                  size="md"
+                  type="number"
+                  min={0}
+                  placeholder="0"
+                  value={form.maps_max_crawled_places_per_search}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      maps_max_crawled_places_per_search: e.target.value,
+                    }))
+                  }
+                />
+              </FormControl>
+                </>
+              ) : null}
             </ModalBody>
             <ModalFooter
               flexShrink={0}
@@ -807,7 +1065,7 @@ const CampaignsPage = () => {
               borderColor="gray.100"
               fontSize="md"
             >
-              <Button size="md" variant="ghost" onClick={createModal.onClose}>
+              <Button size="md" variant="ghost" onClick={closeCreateModalAndReset}>
                 Cancel
               </Button>
               <Button
@@ -815,9 +1073,13 @@ const CampaignsPage = () => {
                 type="submit"
                 colorScheme="blue"
                 isLoading={submitting}
-                loadingText="Creating"
+                loadingText={
+                  accountBookMode === 'import' ? 'Working…' : 'Creating'
+                }
               >
-                Create campaign
+                {accountBookMode === 'import'
+                  ? 'Create campaign & import'
+                  : 'Create campaign'}
               </Button>
             </ModalFooter>
           </form>
@@ -840,16 +1102,30 @@ const CampaignsPage = () => {
               className="mx-auto mb-6"
               aria-hidden
             />
-            <p className="text-base font-semibold text-slate-900">
-              A workspace specialist is assembling your overview
-            </p>
-            <p className="mt-4 text-sm leading-relaxed text-slate-600">
-              {agentStepLine?.trim?.() ||
-                rotatingHint}
-            </p>
-            <p className="mt-6 text-xs text-slate-400">
-              This can take several minutes—the page will open automatically.
-            </p>
+            {workspaceAgentSession?.phase === 'import' ||
+            (submitting && accountBookMode === 'import') ? (
+              <>
+                <p className="text-base font-semibold text-slate-900">
+                  Importing your account book
+                </p>
+                <p className="mt-4 text-sm leading-relaxed text-slate-600">
+                  We are reading your spreadsheet and saving each prospect to your
+                  campaign. Large files may take up to a minute.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-base font-semibold text-slate-900">
+                  A workspace specialist is assembling your overview
+                </p>
+                <p className="mt-4 text-sm leading-relaxed text-slate-600">
+                  {agentStepLine?.trim?.() || rotatingHint}
+                </p>
+                <p className="mt-6 text-xs text-slate-400">
+                  This can take several minutes—the page will open automatically.
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}

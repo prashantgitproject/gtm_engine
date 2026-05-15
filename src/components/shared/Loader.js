@@ -1,8 +1,8 @@
 import React from "react";
 
 const Loader = ({
-  size = 40,
-  ringSize = 60,
+  size = 30,
+  ringSize = 50,
   fullScreen = false,
   className = "",
 }) => {

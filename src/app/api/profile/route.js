@@ -13,7 +13,7 @@ export async function GET() {
 
         mongoose.connect(process.env.MONGO_URL);
 
-        const user = await User.findOne({ email: session.user.email }).select("name email payment cloudinaryPath image role linkedin_connected").lean();
+        const user = await User.findOne({ email: session.user.email }).select("name email payment cloudinaryPath image role linkedinConnected senderDomain linkupAccountId").lean();
         if (!user) {
             return new Response("User not found", { status: 404 });
         }

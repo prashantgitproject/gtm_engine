@@ -25,7 +25,7 @@ const sourcingProfileSchema = new Schema(
     linkedin_company_profile_urls: { type: [String], default: [] },
     maps_location_query: { type: String, default: "" },
     maps_search_strings: { type: [String], default: [] },
-    maps_max_crawled_places_per_search: { type: Number, default: 10 },
+    maps_max_crawled_places_per_search: { type: Number, default: 0 },
     maps_max_reviews: { type: Number, default: 0 },
     maps_language: { type: String, default: "en" },
     maps_include_web_results: { type: Boolean, default: false },
@@ -73,6 +73,16 @@ const campaignSchema = new Schema(
       meetingsBooked: { type: Number, default: 0, min: 0 },
     },
 
+    /**
+     * scrape: built via Apify lead/maps/LinkedIn pipeline.
+     * import: rows loaded from user spreadsheet (no automated scrape rebuild).
+     */
+    accountBookOrigin: {
+      type: String,
+      enum: ["scrape", "import"],
+      default: "scrape",
+    },
+
     /** Background account-book (prospect) enrichment */
     accountBookBuildStatus: {
       type: String,
@@ -97,6 +107,46 @@ const campaignSchema = new Schema(
     },
     dripCampaignError: { type: String, default: "" },
     dripCampaignGeneratedAt: { type: Date },
+
+    /** Active outreach after launch */
+    launchChannels: {
+      type: [{ type: String, enum: ["email", "linkedin", "whatsapp"] }],
+      default: [],
+    },
+    launchDeliveryHour: { type: Number, default: 11, min: 0, max: 23 },
+    launchTimezone: { type: String, default: "UTC" },
+    launchedAt: { type: Date },
+    outreachStats: {
+      totalSteps: { type: Number, default: 0 },
+      sent: { type: Number, default: 0 },
+      failed: { type: Number, default: 0 },
+      skipped: { type: Number, default: 0 },
+      scheduled: { type: Number, default: 0 },
+      pending: { type: Number, default: 0 },
+      prospectsEnrolled: { type: Number, default: 0 },
+      prospectsCompleted: { type: Number, default: 0 },
+      byChannel: {
+        email: {
+          sent: { type: Number, default: 0 },
+          failed: { type: Number, default: 0 },
+          scheduled: { type: Number, default: 0 },
+          skipped: { type: Number, default: 0 },
+        },
+        linkedin: {
+          sent: { type: Number, default: 0 },
+          failed: { type: Number, default: 0 },
+          scheduled: { type: Number, default: 0 },
+          skipped: { type: Number, default: 0 },
+        },
+        whatsapp: {
+          sent: { type: Number, default: 0 },
+          failed: { type: Number, default: 0 },
+          scheduled: { type: Number, default: 0 },
+          skipped: { type: Number, default: 0 },
+        },
+      },
+      lastProcessedAt: { type: Date },
+    },
   },
   { timestamps: true }
 );

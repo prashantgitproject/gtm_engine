@@ -8,6 +8,7 @@ import {
   runLinkedinProfileScraperForUrls,
   runLinkedinCompanyProfileScraperForUrls,
 } from "@/libs/apifyCampaignActors";
+import { parseDelimitedList } from "@/libs/sourcingProfile";
 import {
   bumpScoreAfterLinkedinMerge,
   computeLeadBaselineScores,
@@ -16,7 +17,6 @@ import {
 import {
   linkedinDestinationKind,
   normalizeLinkedinUrl,
-  truncateText,
 } from "@/libs/linkedinUrls";
 import {
   fieldsFromLeadScraperRow,
@@ -53,33 +53,9 @@ function sourcingPlain(campaignDoc) {
   return { ...sp };
 }
 
-function mapsPlaceDedupeKey(item) {
-  const u = String(item?.url ?? "").trim();
-  if (u) return u;
-  return String(item?.placeId ?? item?.place_id ?? "").trim();
-}
-
-function dedupeMapsItems(primary, extra) {
-  const seen = new Set();
-  for (const item of primary) {
-    const k = mapsPlaceDedupeKey(item);
-    if (k) seen.add(k);
-  }
-  const out = [...primary];
-  for (const item of extra) {
-    const k = mapsPlaceDedupeKey(item);
-    if (k) {
-      if (seen.has(k)) continue;
-      seen.add(k);
-    }
-    out.push(item);
-  }
-  return out;
-}
-
 /**
- * Build prospects for a campaign: parallel lead + Maps scrapes (targeting ~70%
- * leads / ~30% maps, with extra Maps when the lead scraper under-delivers),
+ * Build prospects for a campaign: run the lead scraper for the full fetch cap,
+ * then optionally run the Google Maps scraper when maps_* fields are set,
  * then LinkedIn profile/company enrichment when URLs exist on lead rows.
  */
 export async function runAccountBookBuild(campaignIdStr, userIdStr) {
@@ -96,6 +72,12 @@ export async function runAccountBookBuild(campaignIdStr, userIdStr) {
 
   if (!campaignDoc) {
     throw new Error("Campaign not found");
+  }
+
+  if (campaignDoc.accountBookOrigin === "import") {
+    throw new Error(
+      "This campaign uses an imported account book. Automated sourcing rebuild is not available."
+    );
   }
 
   if (campaignDoc.accountBookBuildStatus === "running") {
@@ -127,47 +109,58 @@ export async function runAccountBookBuild(campaignIdStr, userIdStr) {
       500
     );
 
-    const leadTarget = Math.floor((fetchCap * 7) / 10);
-    const mapsTarget = fetchCap - leadTarget;
+    const mapsLoc = String(
+      effectiveSourcing.maps_location_query ?? ""
+    ).trim();
+    const mapsTerms = parseDelimitedList(effectiveSourcing.maps_search_strings);
+    const mapsCap = Math.min(
+      Math.max(Number(effectiveSourcing.maps_max_crawled_places_per_search) || 0, 0),
+      500
+    );
+    const mapsEnabled =
+      mapsLoc.length > 0 && mapsTerms.length > 0 && mapsCap > 0;
 
-    const [leadRes, mapsRes] = await Promise.all([
-      leadTarget > 0
-        ? runLeadScraperFromProfile(
-            { ...effectiveSourcing, fetch_count: leadTarget },
-            { limit: leadTarget }
+    const leadRes =
+      fetchCap > 0
+        ? await runLeadScraperFromProfile(
+            { ...effectiveSourcing, fetch_count: fetchCap },
+            { limit: fetchCap }
           )
-        : Promise.resolve({ items: [] }),
-      mapsTarget > 0
-        ? runGoogleMapsScraperFromProfile(effectiveSourcing, {
-            limit: mapsTarget,
-          })
-        : Promise.resolve({ items: [] }),
-    ]);
+        : { items: [] };
 
     await bumpCampaignStep(campaignOid, STEP_MESSAGES[2]);
 
     let leadItems = Array.isArray(leadRes?.items) ? leadRes.items : [];
-    let mapsItems = Array.isArray(mapsRes?.items) ? mapsRes.items : [];
-
-    if (leadTarget > 0) {
-      leadItems = leadItems.slice(0, leadTarget);
-    }
-    if (mapsTarget > 0) {
-      mapsItems = mapsItems.slice(0, mapsTarget);
+    if (fetchCap > 0) {
+      leadItems = leadItems.slice(0, fetchCap);
     }
 
-    let shortfall = fetchCap - leadItems.length - mapsItems.length;
-    if (shortfall > 0) {
-      const { items: moreRaw } = await runGoogleMapsScraperFromProfile(
-        effectiveSourcing,
-        { limit: shortfall }
-      );
-      const more = Array.isArray(moreRaw) ? moreRaw : [];
-      mapsItems = dedupeMapsItems(mapsItems, more);
-      const maxMaps = fetchCap - leadItems.length;
-      if (mapsItems.length > maxMaps) {
-        mapsItems = mapsItems.slice(0, maxMaps);
-      }
+    let mapsItems = [];
+    if (mapsEnabled) {
+      const mapsRes = await runGoogleMapsScraperFromProfile(effectiveSourcing, {
+        limit: mapsCap,
+      });
+      mapsItems = Array.isArray(mapsRes?.items) ? mapsRes.items : [];
+      mapsItems = mapsItems.slice(0, mapsCap);
+    }
+
+    const savedLeadProspectIds = [];
+    for (const item of leadItems) {
+      const personUrlNorm = normalizeLinkedinUrl(item.linkedin);
+      const { displayScore: ds0, discoveryScore: d0 } =
+        computeLeadBaselineScores(Boolean(personUrlNorm));
+      const flat = mergeProspectFlatFields({}, [fieldsFromLeadScraperRow(item)]);
+      const doc = await Prospect.create({
+        user: userOid,
+        campaign: campaignOid,
+        primarySource: "lead_scraper",
+        sources: ["lead_scraper"],
+        leadScraper: item,
+        displayScore: ds0,
+        discoveryScore: d0,
+        ...flat,
+      });
+      savedLeadProspectIds.push(doc._id);
     }
 
     for (const item of mapsItems) {
@@ -192,25 +185,6 @@ export async function runAccountBookBuild(campaignIdStr, userIdStr) {
     }
 
     await bumpCampaignStep(campaignOid, STEP_MESSAGES[3]);
-
-    const savedLeadProspectIds = [];
-    for (const item of leadItems) {
-      const personUrlNorm = normalizeLinkedinUrl(item.linkedin);
-      const { displayScore: ds0, discoveryScore: d0 } =
-        computeLeadBaselineScores(Boolean(personUrlNorm));
-      const flat = mergeProspectFlatFields({}, [fieldsFromLeadScraperRow(item)]);
-      const doc = await Prospect.create({
-        user: userOid,
-        campaign: campaignOid,
-        primarySource: "lead_scraper",
-        sources: ["lead_scraper"],
-        leadScraper: item,
-        displayScore: ds0,
-        discoveryScore: d0,
-        ...flat,
-      });
-      savedLeadProspectIds.push(doc._id);
-    }
 
     /** LinkedIn enrichment (sequential — easier on quotas and timeouts). */
     const leadProspects = await Prospect.find({

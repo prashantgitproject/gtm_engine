@@ -1,6 +1,7 @@
 'use client'
 
 import { AccountBookProspectsTable } from '@/components/campaigns/AccountBookProspectsTable'
+import { LaunchCampaignModal } from '@/components/campaigns/LaunchCampaignModal'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import Loader from '@/components/shared/Loader'
 import { buildAccountBookCsv, slugifyFilenamePart } from '@/libs/campaignAccountBookCsv'
@@ -13,6 +14,7 @@ import {
   FiChevronLeft,
   FiDownload,
   FiLayers,
+  FiPause,
   FiSend,
   FiZap,
 } from 'react-icons/fi'
@@ -104,6 +106,9 @@ const CampaignDetailPage = () => {
   const [prospectListLoading, setProspectListLoading] = useState(false)
   const [retryingBook, setRetryingBook] = useState(false)
   const [dripDesignLoading, setDripDesignLoading] = useState(false)
+  const [showLaunchModal, setShowLaunchModal] = useState(false)
+  const [launching, setLaunching] = useState(false)
+  const [pausing, setPausing] = useState(false)
 
   const results = useMemo(
     () => normalizeResults(campaign?.results),
@@ -195,6 +200,13 @@ const CampaignDetailPage = () => {
     silentReloadCampaign,
     loadProspects,
   ])
+
+  // Poll outreach progress while campaign is running
+  useEffect(() => {
+    if (campaign?.status !== 'running') return undefined
+    const iv = window.setInterval(() => silentReloadCampaign(), 30_000)
+    return () => window.clearInterval(iv)
+  }, [campaign?.status, silentReloadCampaign])
 
   useEffect(() => {
     if (!id || typeof id !== 'string') {
@@ -336,10 +348,54 @@ const CampaignDetailPage = () => {
       })
       return
     }
-    toast.message('Launch is not wired yet', {
-      description:
-        'When we ship execution, this will arm email, LinkedIn, and WhatsApp sends with the sequences you edited in each row.',
-    })
+    setShowLaunchModal(true)
+  }
+
+  const handleConfirmLaunch = async ({ channels, deliveryHour }) => {
+    if (!id) return
+    setLaunching(true)
+    try {
+      const res = await fetch(`/api/campaigns/${id}/launch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channels, deliveryHour }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(body.error || 'Could not launch campaign')
+        return
+      }
+      setShowLaunchModal(false)
+      toast.success('Campaign launched', {
+        description: `${body.prospectsEnrolled ?? accountBookProspects.length} prospects enrolled across ${channels.join(', ')}.`,
+      })
+      await silentReloadCampaign()
+    } catch (e) {
+      toast.error(e?.message || 'Could not launch campaign')
+    } finally {
+      setLaunching(false)
+    }
+  }
+
+  const handlePauseCampaign = async () => {
+    if (!id) return
+    setPausing(true)
+    try {
+      const res = await fetch(`/api/campaigns/${id}/pause`, { method: 'POST' })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(body.error || 'Could not pause campaign')
+        return
+      }
+      toast.success('Campaign paused', {
+        description: 'Scheduled sends have been paused.',
+      })
+      await silentReloadCampaign()
+    } catch (e) {
+      toast.error(e?.message || 'Could not pause campaign')
+    } finally {
+      setPausing(false)
+    }
   }
 
   if (user === undefined || user === null) {
@@ -410,6 +466,7 @@ const CampaignDetailPage = () => {
 
   const signals = Array.isArray(campaign.signals) ? campaign.signals : []
   const bookStatus = campaign.accountBookBuildStatus || 'idle'
+  const isImportedAccountBook = campaign.accountBookOrigin === 'import'
   const avgScore =
     accountBookProspects.length > 0
       ? Math.round(
@@ -485,14 +542,17 @@ const CampaignDetailPage = () => {
                 type="button"
                 onClick={handleRetryAccountBookBuild}
                 disabled={
+                  isImportedAccountBook ||
                   !ACCOUNT_BOOK_REBUILD_ENABLED ||
                   bookStatus === 'running' ||
                   retryingBook
                 }
                 title={
-                  ACCOUNT_BOOK_REBUILD_ENABLED
-                    ? undefined
-                    : 'Account book rebuild is temporarily unavailable.'
+                  isImportedAccountBook
+                    ? 'Imported lists cannot be rebuilt from automated sourcing.'
+                    : ACCOUNT_BOOK_REBUILD_ENABLED
+                      ? undefined
+                      : 'Account book rebuild is temporarily unavailable.'
                 }
                 className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 lg:flex-none"
               >
@@ -516,19 +576,32 @@ const CampaignDetailPage = () => {
                   ? 'Regenerate drip campaign'
                   : 'Create drip campaign'}
               </button>
-              <button
-                type="button"
-                onClick={handleLaunchCampaign}
-                disabled={
-                  campaign.dripCampaignStatus !== 'complete' ||
-                  accountBookProspects.length === 0 ||
-                  bookStatus === 'running'
-                }
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-800 to-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:from-sky-900 hover:to-cyan-700 disabled:cursor-not-allowed disabled:from-slate-400 disabled:to-slate-400 disabled:shadow-none lg:flex-none"
-              >
-                <FiSend aria-hidden />
-                Launch campaign
-              </button>
+              {campaign.status === 'running' ? (
+                <button
+                  type="button"
+                  onClick={handlePauseCampaign}
+                  disabled={pausing}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 shadow-sm hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 lg:flex-none"
+                >
+                  <FiPause aria-hidden />
+                  {pausing ? 'Pausing…' : 'Pause campaign'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleLaunchCampaign}
+                  disabled={
+                    campaign.dripCampaignStatus !== 'complete' ||
+                    accountBookProspects.length === 0 ||
+                    bookStatus === 'running' ||
+                    campaign.status === 'completed'
+                  }
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-800 to-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:from-sky-900 hover:to-cyan-700 disabled:cursor-not-allowed disabled:from-slate-400 disabled:to-slate-400 disabled:shadow-none lg:flex-none"
+                >
+                  <FiSend aria-hidden />
+                  {campaign.status === 'paused' ? 'Resume campaign' : 'Launch campaign'}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -583,33 +656,63 @@ const CampaignDetailPage = () => {
               Campaign metrics
             </h2>
           </div>
+          {/* Live outreach progress bar */}
+          {campaign.status === 'running' && campaign.outreachStats?.totalSteps > 0 && (
+            <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+              <div className="flex items-center justify-between text-xs font-semibold text-sky-900">
+                <span>
+                  Outreach in progress · {campaign.outreachStats.sent ?? 0} of{' '}
+                  {campaign.outreachStats.totalSteps ?? 0} steps sent
+                </span>
+                <span>{Math.round(((campaign.outreachStats.sent ?? 0) / campaign.outreachStats.totalSteps) * 100)}%</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-sky-100">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-sky-700 to-cyan-500 transition-all"
+                  style={{
+                    width: `${Math.round(((campaign.outreachStats.sent ?? 0) / campaign.outreachStats.totalSteps) * 100)}%`,
+                  }}
+                />
+              </div>
+              <p className="mt-1.5 text-[11px] text-sky-700">
+                {campaign.outreachStats.scheduled ?? 0} scheduled · {campaign.outreachStats.failed ?? 0} failed · {campaign.outreachStats.skipped ?? 0} skipped
+                {campaign.launchedAt ? ` · Launched ${formatDate(campaign.launchedAt)}` : ''}
+              </p>
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[
               {
-                label: 'Outreach sends',
-                value: results.sends.toLocaleString(),
-                hint: 'All channels',
+                label: 'Messages sent',
+                value: (campaign.outreachStats?.sent ?? results.sends).toLocaleString(),
+                hint: campaign.status === 'running'
+                  ? `${campaign.outreachStats?.scheduled ?? 0} pending delivery`
+                  : 'All channels',
               },
               {
                 label: 'Replies',
                 value: results.replies.toLocaleString(),
-                hint: analytics.replyRateDisplay + ' reply rate (est.)',
+                hint: analytics.replyRateDisplay + ' reply rate',
               },
               {
                 label: 'Meetings booked',
                 value: results.meetingsBooked.toLocaleString(),
-                hint: analytics.meetingRateDisplay + ' conv. to meeting (est.)',
+                hint: analytics.meetingRateDisplay + ' conv. rate',
               },
               {
-                label: 'Prospects in book',
+                label: 'Prospects enrolled',
                 value:
-                  accountBookProspects.length > 0
-                    ? accountBookProspects.length.toString()
-                    : '—',
+                  campaign.outreachStats?.prospectsEnrolled != null
+                    ? campaign.outreachStats.prospectsEnrolled.toLocaleString()
+                    : accountBookProspects.length > 0
+                      ? accountBookProspects.length.toString()
+                      : '—',
                 hint:
-                  accountBookProspects.length > 0
-                    ? `Avg fit ${avgScore}`
-                    : 'Create account book',
+                  campaign.outreachStats?.prospectsCompleted != null
+                    ? `${campaign.outreachStats.prospectsCompleted} completed`
+                    : accountBookProspects.length > 0
+                      ? `Avg fit ${avgScore}`
+                      : 'Create account book',
               },
             ].map((card) => (
               <article
@@ -664,37 +767,43 @@ const CampaignDetailPage = () => {
             </div>
             <div>
               <p className="text-sm font-semibold text-slate-800">
-                Channel mix (planned — email · LinkedIn · WhatsApp)
+                Channel breakdown
               </p>
-              <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                <li className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                  <span className="flex items-center gap-2">
-                    <MdOutlineEmail className="text-sky-700" />
-                    Email
-                  </span>
-                  <span className="font-semibold tabular-nums text-slate-900">
-                    45%
-                  </span>
-                </li>
-                <li className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                  <span className="flex items-center gap-2">
-                    <FaLinkedin className="text-sky-800" />
-                    LinkedIn
-                  </span>
-                  <span className="font-semibold tabular-nums text-slate-900">
-                    38%
-                  </span>
-                </li>
-                <li className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                  <span className="flex items-center gap-2">
-                    <FaWhatsapp className="text-emerald-600" aria-hidden />
-                    WhatsApp
-                  </span>
-                  <span className="font-semibold tabular-nums text-slate-900">
-                    17%
-                  </span>
-                </li>
-              </ul>
+              {(() => {
+                const byChannel = campaign.outreachStats?.byChannel
+                const channels = [
+                  { key: 'email', Icon: MdOutlineEmail, color: 'text-sky-700', label: 'Email' },
+                  { key: 'linkedin', Icon: FaLinkedin, color: 'text-sky-800', label: 'LinkedIn' },
+                  { key: 'whatsapp', Icon: FaWhatsapp, color: 'text-emerald-600', label: 'WhatsApp' },
+                ]
+                const totalSent = channels.reduce((acc, c) => acc + (byChannel?.[c.key]?.sent ?? 0), 0)
+                return (
+                  <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                    {channels.map(({ key, Icon, color, label }) => {
+                      const chData = byChannel?.[key]
+                      const sent = chData?.sent ?? 0
+                      const pct = totalSent > 0 ? Math.round((sent / totalSent) * 100) : null
+                      const active = (campaign.launchChannels || []).includes(key)
+                      return (
+                        <li key={key} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                          <span className="flex items-center gap-2">
+                            <Icon className={color} aria-hidden />
+                            {label}
+                            {active ? (
+                              <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                                active
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="font-semibold tabular-nums text-slate-900">
+                            {byChannel ? `${sent} sent${pct !== null ? ` · ${pct}%` : ''}` : '—'}
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )
+              })()}
             </div>
           </div>
         </section>
@@ -771,21 +880,28 @@ const CampaignDetailPage = () => {
                     {bookStatus === 'running'
                       ? 'The workspace assistant is finishing touches in the background. This view refreshes on its own.'
                       : bookStatus === 'failed'
-                        ? 'You can widen locations or loosen filters and try again below.'
-                        : 'When a campaign spins up, enriched companies and contacts land here sorted by prominence from public signals.'}
+                        ? isImportedAccountBook
+                          ? 'Check that your file had the required columns (prospect, person, email, phone) and valid rows, then create a new import campaign if needed.'
+                          : 'You can widen locations or loosen filters and try again below.'
+                        : isImportedAccountBook
+                          ? 'When you import a spreadsheet on the campaigns page, contacts appear here for outreach and drips.'
+                          : 'When a campaign spins up, enriched companies and contacts land here sorted by prominence from public signals.'}
                   </p>
                   <button
                     type="button"
                     onClick={handleRetryAccountBookBuild}
                     disabled={
+                      isImportedAccountBook ||
                       !ACCOUNT_BOOK_REBUILD_ENABLED ||
                       bookStatus === 'running' ||
                       retryingBook
                     }
                     title={
-                      ACCOUNT_BOOK_REBUILD_ENABLED
-                        ? undefined
-                        : 'Account book rebuild is temporarily unavailable.'
+                      isImportedAccountBook
+                        ? 'Imported lists cannot be rebuilt from automated sourcing.'
+                        : ACCOUNT_BOOK_REBUILD_ENABLED
+                          ? undefined
+                          : 'Account book rebuild is temporarily unavailable.'
                     }
                     className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                   >
@@ -817,86 +933,84 @@ const CampaignDetailPage = () => {
               Personalized drip outreach
             </h2>
             <p className="mt-1 text-sm text-slate-600">
-              Each prospect row gets its own five- to seven-step sequence across
-              email, LinkedIn, and WhatsApp, written from your campaign goal and
-              account-book context. Open any row to review or edit copy; nothing
-              sends until we ship the execution layer.
+              Each prospect gets a 5–7 step sequence across email, LinkedIn, and WhatsApp
+              written from your campaign goal. Open any row in the account book to review
+              or edit copy before or after launch.
             </p>
-            {campaign.dripCampaignStatus === 'complete' &&
-            campaign.dripCampaignGeneratedAt ? (
-              <p className="mt-2 text-xs font-medium text-emerald-800">
-                Last generated {formatDate(campaign.dripCampaignGeneratedAt)}
-              </p>
-            ) : null}
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              {campaign.dripCampaignStatus === 'complete' && campaign.dripCampaignGeneratedAt ? (
+                <span className="text-xs font-medium text-emerald-800">
+                  Drip generated {formatDate(campaign.dripCampaignGeneratedAt)}
+                </span>
+              ) : null}
+              {campaign.launchedAt ? (
+                <span className="text-xs font-medium text-sky-800">
+                  Launched {formatDate(campaign.launchedAt)}
+                  {(campaign.launchChannels || []).length > 0
+                    ? ` · ${campaign.launchChannels.join(', ')}`
+                    : ''}
+                </span>
+              ) : null}
+            </div>
           </div>
           <div className="grid gap-4 lg:grid-cols-3">
             {[
               {
                 channel: 'email',
-                title: 'Email — depth and narrative',
-                body: 'Multi-touch threads for proof, ROI, and scheduling asks. When live, we will track opens, clicks, bounces, and reply rate per step.',
+                title: 'Email',
+                body: 'Multi-touch threads for proof, ROI, and scheduling asks.',
                 Icon: MdOutlineEmail,
                 border: 'border-sky-200 bg-sky-50',
               },
               {
                 channel: 'linkedin',
-                title: 'LinkedIn — timing and trust',
-                body: 'Connection notes and short DMs aligned to signals from the book. Execution will enforce daily invite caps and thread state so reps do not double-ping.',
+                title: 'LinkedIn',
+                body: 'Connection notes and short DMs aligned to signals from the account book.',
                 Icon: FaLinkedin,
                 border: 'border-slate-200 bg-white',
               },
               {
                 channel: 'whatsapp',
-                title: 'WhatsApp — high-intent follow-up',
-                body: 'Short, consent-aware nudges after warmer touches. Sending will require opted-in numbers and template compliance; metrics will mirror read receipts and replies.',
+                title: 'WhatsApp',
+                body: 'Short nudges after warmer touches — sent to prospects with a mobile number on file.',
                 Icon: FaWhatsapp,
                 border: 'border-emerald-200 bg-emerald-50/60',
               },
             ].map((step) => {
               const Icon = step.Icon
+              const active = (campaign.launchChannels || []).includes(step.channel)
+              const stats = campaign.outreachStats?.byChannel?.[step.channel]
               return (
                 <article
                   key={step.channel}
                   className={`rounded-2xl border p-5 shadow-sm ${step.border}`}
                 >
-                  <Icon
-                    className="shrink-0 text-slate-800"
-                    size={24}
-                    aria-hidden
-                  />
-                  <h3 className="mt-3 text-base font-bold text-slate-900">
-                    {step.title}
-                  </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
-                    {step.body}
-                  </p>
+                  <div className="flex items-start justify-between gap-2">
+                    <Icon className="shrink-0 text-slate-800" size={24} aria-hidden />
+                    {campaign.status === 'running' && active ? (
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                        Active
+                      </span>
+                    ) : null}
+                  </div>
+                  <h3 className="mt-3 text-base font-bold text-slate-900">{step.title}</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-700">{step.body}</p>
+                  {stats ? (
+                    <ul className="mt-3 space-y-1 text-xs text-slate-600">
+                      <li><span className="font-semibold text-slate-800">{stats.sent}</span> sent</li>
+                      {stats.scheduled > 0 && <li><span className="font-semibold text-sky-800">{stats.scheduled}</span> scheduled</li>}
+                      {stats.failed > 0 && <li><span className="font-semibold text-rose-700">{stats.failed}</span> failed</li>}
+                      {stats.skipped > 0 && <li><span className="font-semibold text-slate-500">{stats.skipped}</span> skipped</li>}
+                    </ul>
+                  ) : null}
                 </article>
               )
             })}
           </div>
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              <span className="font-semibold text-slate-900">
-                Metrics we will expose at send time
-              </span>
-              <ul className="mt-2 list-inside list-disc space-y-1 text-slate-700">
-                <li>Per-step delivery, replies, and meetings booked</li>
-                <li>Channel lift compared to single-channel baselines</li>
-                <li>Time-to-first-reply and sequence completion funnel</li>
-              </ul>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              <span className="font-semibold text-slate-900">
-                Guardrails (design + future execution)
-              </span>
-              <p className="mt-2">
-                Copy is grounded in account-book fields (role, company, signals,
-                “why this person”). LinkedIn cadence stays conservative; WhatsApp
-                only where a number exists and policy allows. Regenerating a drip
-                overwrites stored sequences — rebuild the account book first if
-                you need a fresh audience.
-              </p>
-            </div>
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+            Copy is grounded in account-book fields (role, company, signals, “why this person”). LinkedIn
+            cadence stays conservative; WhatsApp only sends where a mobile number is on file. Regenerating
+            a drip overwrites stored sequences — rebuild the account book first for a fresh audience.
           </div>
         </section>
 
@@ -930,6 +1044,14 @@ const CampaignDetailPage = () => {
           </section>
         </div>
       </div>
+
+      <LaunchCampaignModal
+        open={showLaunchModal}
+        onClose={() => !launching && setShowLaunchModal(false)}
+        onLaunch={handleConfirmLaunch}
+        launching={launching}
+        defaultDeliveryHour={11}
+      />
     </div>
   )
 }

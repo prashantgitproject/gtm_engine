@@ -75,7 +75,16 @@ export async function POST(request) {
       typeof rawSp.file_name === "string" &&
       rawSp.file_name.trim();
 
-    const sourcingProfile = normalizeSourcingProfile(body.sourcingProfile);
+    const originRaw =
+      typeof body.accountBookOrigin === "string"
+        ? body.accountBookOrigin.trim().toLowerCase()
+        : "";
+    const accountBookOrigin =
+      originRaw === "import" ? "import" : "scrape";
+
+    const sourcingProfile = normalizeSourcingProfile(
+      accountBookOrigin === "import" ? {} : body.sourcingProfile
+    );
     if (!userFileName) {
       const slug = name
         .toLowerCase()
@@ -91,6 +100,7 @@ export async function POST(request) {
       goal,
       description,
       signals,
+      accountBookOrigin,
       sourcingProfile,
       status: "draft",
       results: { sends: 0, replies: 0, meetingsBooked: 0 },

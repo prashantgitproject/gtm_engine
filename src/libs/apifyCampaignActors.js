@@ -165,59 +165,35 @@ export function buildLinkedinCompanyProfileScraperInput(profile = {}) {
 }
 
 /**
- * Google Maps scraper — location from cities, states, and countries (free-text
- * ok, e.g. "Bangalore, India"). Place search from company keywords (or defaults).
+ * Google Maps scraper — uses only maps_* sourcing fields (see campaign modal).
+ * Location + search terms come from the profile; other actor flags stay fixed.
  */
 export function buildGoogleMapsScraperInput(profile = {}) {
   const p = profile || {};
-  const mapsOverride =
-    typeof p.maps_location_query === "string" && p.maps_location_query.trim()
+  const locationQuery =
+    typeof p.maps_location_query === "string"
       ? p.maps_location_query.trim()
       : "";
-
-  const cityPart = Array.isArray(p.contact_city)
-    ? p.contact_city.filter(Boolean).join(", ")
-    : String(p.contact_city || "").trim();
-  const statePart = Array.isArray(p.contact_state)
-    ? p.contact_state.filter(Boolean).join(", ")
-    : String(p.contact_state || "").trim();
-  const locPart = Array.isArray(p.contact_location)
-    ? p.contact_location.filter(Boolean).join(", ")
-    : String(p.contact_location || "").trim();
-
-  const locationQuery =
-    mapsOverride ||
-    [cityPart, statePart, locPart].filter(Boolean).join(", ").trim() ||
-    "United States";
-
-  const fromMapsOverride = parseDelimitedList(p.maps_search_strings);
-  const fromKeywords = parseDelimitedList(p.company_keywords);
-  const searchStringsArray =
-    fromMapsOverride.length > 0
-      ? fromMapsOverride
-      : fromKeywords.length > 0
-        ? fromKeywords
-        : ["business"];
-
+  const searchStringsArray = parseDelimitedList(p.maps_search_strings);
   const maxCrawled = Number(p.maps_max_crawled_places_per_search);
-  const maxReviews = Number(p.maps_max_reviews);
 
   return {
-    includeWebResults: Boolean(p.maps_include_web_results),
-    language: p.maps_language || "en",
+    includeWebResults: false,
+    language: "en",
     locationQuery,
     maxCrawledPlacesPerSearch:
       Number.isFinite(maxCrawled) && maxCrawled > 0 ? maxCrawled : 10,
-    maxReviews: Number.isFinite(maxReviews) && maxReviews >= 0 ? maxReviews : 0,
-    maximumLeadsEnrichmentRecords: 0,
-    scrapeContacts: false,
+    maxReviews: 0,
+    maximumLeadsEnrichmentRecords: 1,
+    placeMinimumStars: "threeAndHalf",
+    scrapeContacts: true,
     scrapeDirectories: false,
     scrapeImageAuthors: false,
     scrapePlaceDetailPage: false,
     scrapeReviewsPersonalData: false,
     scrapeSocialMediaProfiles: {
       facebooks: false,
-      instagrams: false,
+      instagrams: true,
       tiktoks: false,
       twitters: false,
       youtubes: false,
@@ -226,6 +202,7 @@ export function buildGoogleMapsScraperInput(profile = {}) {
     searchStringsArray,
     skipClosedPlaces: false,
     verifyLeadsEnrichmentEmails: false,
+    website: "withWebsite",
   };
 }
 
@@ -249,6 +226,13 @@ export async function runLinkedinProfileScraperFromProfile(profile, options = {}
 
 export async function runGoogleMapsScraperFromProfile(profile, options = {}) {
   const input = buildGoogleMapsScraperInput(profile);
+  if (
+    !input.locationQuery ||
+    !Array.isArray(input.searchStringsArray) ||
+    input.searchStringsArray.length === 0
+  ) {
+    return { run: null, items: [] };
+  }
   return runApifyActor({
     actorId: APIFY_CAMPAIGN_ACTORS.googleMapsScraper,
     input,

@@ -51,10 +51,16 @@ export function normalizeSourcingProfile(raw) {
   p.maps_search_strings = parseDelimitedList(p.maps_search_strings);
 
   p.fetch_count = parsePositiveInt(p.fetch_count, 10);
-  p.maps_max_crawled_places_per_search = parsePositiveInt(
-    p.maps_max_crawled_places_per_search,
-    10
-  );
+  {
+    const raw = p.maps_max_crawled_places_per_search;
+    if (raw === "" || raw === null || raw === undefined) {
+      p.maps_max_crawled_places_per_search = 0;
+    } else {
+      const n = parsePositiveInt(raw, 0);
+      p.maps_max_crawled_places_per_search =
+        n > 0 ? Math.min(n, 500) : 0;
+    }
+  }
   p.maps_max_reviews = Math.max(
     0,
     parsePositiveInt(p.maps_max_reviews, 0) || 0
@@ -111,7 +117,7 @@ export function getDefaultSourcingProfile() {
     linkedin_company_profile_urls: [],
     maps_location_query: "",
     maps_search_strings: [],
-    maps_max_crawled_places_per_search: 10,
+    maps_max_crawled_places_per_search: 0,
     maps_max_reviews: 0,
     maps_language: "en",
     maps_include_web_results: false,

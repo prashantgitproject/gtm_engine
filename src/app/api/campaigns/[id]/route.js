@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
+import { connectDB } from "@/libs/db";
 import { getMongoUserFromSession } from "@/libs/mongoUser";
 import { Campaign } from "@/models/Campaign";
 
@@ -20,6 +21,8 @@ export async function GET(request, { params }) {
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid campaign id" }, { status: 400 });
     }
+
+    await connectDB();
 
     const campaign = await Campaign.findOne({
       _id: id,
